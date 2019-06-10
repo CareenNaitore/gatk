@@ -306,6 +306,18 @@ public class ExperimentalReadThreadingGraph extends ReadThreadingGraphInterface 
     }
 
 
+    /**
+     * Filters empty or uninformative junction trees from the graph.
+     *
+     * @return
+     */
+    public void pruneJunctionTrees(final int pruneFactor) {
+        if (pruneFactor > 0) {
+            throw new UnsupportedOperationException("Currently pruning based JT evidence is not supported.");
+        }
+        readThreadingJunctionTrees = Maps.filterValues( Collections.unmodifiableMap(readThreadingJunctionTrees), ThreadingTree::isEmptyTree);
+    }
+
     // Generate a SeqGraph that is special
     @Override
     public SeqGraph toSequenceGraph() {

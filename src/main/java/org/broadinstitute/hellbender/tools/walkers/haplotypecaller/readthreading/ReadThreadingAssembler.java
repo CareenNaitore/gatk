@@ -187,7 +187,8 @@ public final class ReadThreadingAssembler {
             Utils.validateArg( source != null && sink != null, () -> "Both source and sink cannot be null but got " + source + " and sink " + sink + " for graph " + graph);
 
             for (final KBestHaplotype<V, E> kBestHaplotype :
-                    new KBestHaplotypeFinder<V, E>(graph,source,sink).findBestHaplotypes(numBestHaplotypesPerGraph)) {
+                    (generateSeqGraph ? new KBestHaplotypeFinder<V, E>(graph,source,sink) : new ExperimentalKBestHaplotypeFinder<V, E>(graph,source,sink))
+                            .findBestHaplotypes(numBestHaplotypesPerGraph)) {
                 final Haplotype h = kBestHaplotype.haplotype();
                 if( !returnHaplotypes.contains(h) ) {
                     if (kBestHaplotype.isReference()) {

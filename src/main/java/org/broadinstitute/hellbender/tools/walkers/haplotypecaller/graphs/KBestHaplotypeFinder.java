@@ -14,7 +14,7 @@ import java.util.stream.Collectors;
  *
  * @author Valentin Ruano-Rubio &lt;valentin@broadinstitute.org&gt;
  */
-public final class KBestHaplotypeFinder<V extends BaseVertex, E extends BaseEdge> {
+public class KBestHaplotypeFinder<V extends BaseVertex, E extends BaseEdge> {
 
     private final BaseGraph<V, E> graph;
     final Set<V> sinks;
@@ -43,10 +43,17 @@ public final class KBestHaplotypeFinder<V extends BaseVertex, E extends BaseEdge
         //TODO Once that is solve, the if-else below should be substituted by a throw if there is any cycles,
         //TODO just the line commented out below if you want to trade early-bug-fail for speed.
         //this.graph = graph;
-        this.graph = new CycleDetector<>(graph).detectCycles() ? removeCyclesAndVerticesThatDontLeadToSinks(graph,sources,sinks) : graph;
+        if (sources.size() != 1 || sinks.size()!= 1) {
+            throw new RuntimeException("Multiple source or sink v");
+        }
+        this.graph = removeCyclesIfNecessary(graph, sources, sinks);
 
         this.sinks = sinks;
         this.sources = sources;
+    }
+
+    protected BaseGraph<V, E> removeCyclesIfNecessary(BaseGraph<V, E> graph, Set<V> sources, Set<V> sinks) {
+        return new CycleDetector<>(graph).detectCycles() ? removeCyclesAndVerticesThatDontLeadToSinks(graph,sources,sinks) : graph;
     }
 
     /**
@@ -105,7 +112,7 @@ public final class KBestHaplotypeFinder<V extends BaseVertex, E extends BaseEdge
      * Removes edges that produces cycles and also dead vertices that do not lead to any sink vertex.
      * @return never {@code null}.
      */
-    private BaseGraph<V, E> removeCyclesAndVerticesThatDontLeadToSinks(final BaseGraph<V, E> original, final Collection<V> sources, final Set<V> sinks) {
+    protected BaseGraph<V, E> removeCyclesAndVerticesThatDontLeadToSinks(final BaseGraph<V, E> original, final Collection<V> sources, final Set<V> sinks) {
         final Set<E> edgesToRemove = new HashSet<>(original.edgeSet().size());
         final Set<V> vertexToRemove = new HashSet<>(original.vertexSet().size());
 

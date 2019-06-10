@@ -85,6 +85,32 @@ public class ExperimentalReadThreadingGraphUnitTest extends BaseTest {
     }
 
     @Test
+    // The simplest case where we expect two uninformative junction trees to be constructed
+    public void testPruneGraph() {
+        final ExperimentalReadThreadingGraph assembler = new ExperimentalReadThreadingGraph(5);
+        String ref = "GGGAAATTTCCCGGG";
+
+        // A simple snip het
+        String refRead1 = "GGGAAATTTCC";
+        String refRead2 = "GAAATTTCCCGGG";
+        String altRead1 = "GGAAATGTC";
+        String altRead2 = "GGAAATGTCCCGGG";
+
+        assembler.addSequence("anonymous", getBytes(ref), true);
+        assembler.addSequence("anonymous", getBytes(refRead1), false);
+        assembler.addSequence("anonymous", getBytes(refRead2), false);
+        assembler.addSequence("anonymous", getBytes(altRead1), false);
+        assembler.addSequence("anonymous", getBytes(altRead2), false);
+
+        assembler.generateJunctionTrees();
+
+        assembler.pruneJunctionTrees(0);
+
+        Map<MultiDeBruijnVertex, ExperimentalReadThreadingGraph.ThreadingTree> junctionTrees = assembler.getReadThreadingJunctionTrees(false);
+        Assert.assertEquals(junctionTrees.size(), 0);
+    }
+
+    @Test
     public void testSimpleJunctionTreeIncludeRefInJunctionTree() {
         final ExperimentalReadThreadingGraph assembler = new ExperimentalReadThreadingGraph(5);
         String ref = "GGGAAATTTCCCGGG";
@@ -569,7 +595,7 @@ public class ExperimentalReadThreadingGraphUnitTest extends BaseTest {
             Assert.assertTrue(mergeResult == 1);
         }
 
-        final List<String> paths = new KBestHaplotypeFinder<>(rtgraph).findBestHaplotypes().stream()
+        final List<String> paths = new ExperimentalKBestHaplotypeFinder<>(rtgraph).findBestHaplotypes().stream()
                 .map(kBestHaplotype -> new String(kBestHaplotype.getBases()))
                 .distinct()
                 .sorted()
@@ -676,7 +702,7 @@ public class ExperimentalReadThreadingGraphUnitTest extends BaseTest {
         // confirm that we created the appropriate bubble in the graph only if expected
         rtgraph.cleanNonRefPaths();
 //        final SeqGraph seqGraph = rtgraph.toSequenceGraph();
-        final List<KBestHaplotype> paths = new KBestHaplotypeFinder(rtgraph, rtgraph.getReferenceSourceVertex(), rtgraph.getReferenceSinkVertex()).findBestHaplotypes();
+        final List<KBestHaplotype> paths = new ExperimentalKBestHaplotypeFinder(rtgraph, rtgraph.getReferenceSourceVertex(), rtgraph.getReferenceSinkVertex()).findBestHaplotypes();
         Assert.assertEquals(paths.size(), shouldBeMerged ? 2 : 1);
     }
 
