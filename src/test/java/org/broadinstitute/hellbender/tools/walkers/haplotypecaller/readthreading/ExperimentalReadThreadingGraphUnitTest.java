@@ -15,6 +15,7 @@ import org.testng.Assert;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
+import java.io.File;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -172,6 +173,9 @@ public class ExperimentalReadThreadingGraphUnitTest extends BaseTest {
         Assert.assertNotNull(tree1); // Make sure we actually have tree data for that site
         Assert.assertNotNull(tree2); // Make sure we actually have tree data for that site
 
+        //TODO remove
+        assembler.printGraph(new File("/Users/emeryj/hellbender/gatk/withJT.dot"), 0);
+
         List<String> tree1Choices = tree1.getPathsPresentAsBaseChoiceStrings();
         List<String> tree2Choices = tree2.getPathsPresentAsBaseChoiceStrings();
         // Perfectly phased variants (site 2 has 2 mismatches to the reference)
@@ -226,6 +230,9 @@ public class ExperimentalReadThreadingGraphUnitTest extends BaseTest {
         ExperimentalReadThreadingGraph.ThreadingTree insideTree = junctionTrees.get(assembler.findKmer(new Kmer("TAAAT")));
         Assert.assertNotNull(outsideTree); // Make sure we actually have tree data for that site
         Assert.assertNotNull(insideTree); // Make sure we actually have tree data for that site
+
+        //TODO remove
+        assembler.printGraph(new File("/Users/emeryj/hellbender/gatk/withJT.dot"), 0);
 
         List<String> insideChoices = insideTree.getPathsPresentAsBaseChoiceStrings();
         Assert.assertEquals(insideChoices.size(), 2);

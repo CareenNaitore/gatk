@@ -378,6 +378,37 @@ public class ExperimentalReadThreadingGraph extends ReadThreadingGraphInterface 
         }
     }
 
+    // Extendable method intended to allow for adding extra material to the graph
+    public List<String> getExtraGraphFileLines() {
+        List<String> output = new ArrayList<>();
+        for( Map.Entry<MultiDeBruijnVertex, ThreadingTree> entry : readThreadingJunctionTrees.entrySet()) {
+            // adding the root node to the graph
+            output.add(String.format("\t%s -> %s ", entry.getKey().toString(), entry.getValue().rootNode.getDotName()) +
+            String.format("[color=blue];"));
+            output.add(String.format("\t%s [shape=point];", entry.getValue().rootNode.getDotName()));
+
+            output.addAll(edgesForNodeRecursive(entry.getValue().rootNode));
+        }
+        return output;
+    }
+
+    // Recursive search through a threading tree for nodes
+    private List<String> edgesForNodeRecursive(ThreadingNode node) {
+        List<String> output = new ArrayList<>();
+
+        for ( Map.Entry<MultiSampleEdge, ThreadingNode> childrenNode : node.childrenNodes.entrySet() ) {
+            output.add(String.format("\t%s -> %s ", node.getDotName(), childrenNode.getValue().getDotName() + String.format("[color=blue,label=\"%d\"];",childrenNode.getValue().count)));
+            output.add(String.format("\t%s [label=\"%s\",shape=plaintext]", childrenNode.getValue().getDotName(),
+                    new String(getEdgeTarget(childrenNode.getKey()).getAdditionalSequence(false))));
+            output.addAll(edgesForNodeRecursive(childrenNode.getValue()));
+        }
+        return output;
+    }
+
+    public ThreadingTree getJunctionTreeForNode(MultiDeBruijnVertex vertex) {
+        return readThreadingJunctionTrees.get(vertex);
+    }
+
     // TODO this needs to be filled out and resolved
     // TODO as an extension, this should be made to intelligently pick nodes if there is a fork (possibly an expensive step)
     private List<ThreadingNode> attemptToResolveThreadingBetweenVertexes(MultiDeBruijnVertex startingVertex , MultiDeBruijnVertex vertex) {
@@ -404,7 +435,7 @@ public class ExperimentalReadThreadingGraph extends ReadThreadingGraphInterface 
         private ThreadingNode rootNode;
         private MultiDeBruijnVertex graphBase;
 
-        public ThreadingTree(MultiDeBruijnVertex vertex) {
+        private ThreadingTree(MultiDeBruijnVertex vertex) {
             graphBase = vertex;
             rootNode = new ThreadingNode(null);
         }
@@ -414,24 +445,24 @@ public class ExperimentalReadThreadingGraph extends ReadThreadingGraphInterface 
          *
          * @return
          */
-        public ThreadingNode getAndIncrementRootNode() {
+        private ThreadingNode getAndIncrementRootNode() {
             rootNode.incrementCount();
             return rootNode;
         }
 
         // Determines if this tree actually has any data associated with it
-        public boolean isEmptyTree() {
+        private boolean isEmptyTree() {
             return !rootNode.childrenNodes.isEmpty();
         }
 
         // Returns a list of all the paths (illustrated as sequential edges) observed from this point throug hthe graph
-        public List<List<MultiSampleEdge>> enumeratePathsPresent() {
+        private List<List<MultiSampleEdge>> enumeratePathsPresent() {
             return rootNode.getEdgesThroughNode();
         }
 
         // Returns the junction choices as a list of suffixes to follow
         @VisibleForTesting
-        public List<String> getPathsPresentAsBaseChoiceStrings() {
+        List<String> getPathsPresentAsBaseChoiceStrings() {
             return rootNode.getEdgesThroughNode().stream()
                     .map(path -> path.stream()
                                     .map(edge -> getEdgeTarget(edge).getSuffix())
@@ -440,10 +471,15 @@ public class ExperimentalReadThreadingGraph extends ReadThreadingGraphInterface 
                     .collect(Collectors.toList());
 
         }
+
+        // getter for the root node, TODO to possibly be replaced when the graph gets hidden from prying eyes.
+        public ThreadingNode getRootNode() {
+            return rootNode;
+        }
     }
 
     // Linked node object for storing tree topography
-    private class ThreadingNode {
+    public class ThreadingNode {
         private Map<MultiSampleEdge, ThreadingNode> childrenNodes;
         private MultiSampleEdge prevEdge = null; // This may be null if this node corresponds to the root of the graph
         private int count = 0;
@@ -460,7 +496,7 @@ public class ExperimentalReadThreadingGraph extends ReadThreadingGraphInterface 
          * @param edge edge to add to this current node
          * @return the node corresponding to the one that was added to this graph
          */
-        public ThreadingNode addEdge(MultiSampleEdge edge) {
+        private ThreadingNode addEdge(MultiSampleEdge edge) {
             ThreadingNode nextNode = childrenNodes.computeIfAbsent(edge, k -> new ThreadingNode(edge));
             nextNode.incrementCount();
             return nextNode;
@@ -494,7 +530,7 @@ public class ExperimentalReadThreadingGraph extends ReadThreadingGraphInterface 
          * @return A list of potential paths originating from this node as observed
          */
         @VisibleForTesting
-        public List<List<MultiSampleEdge>> getEdgesThroughNode() {
+        private List<List<MultiSampleEdge>> getEdgesThroughNode() {
             List<List<MultiSampleEdge>> paths = new ArrayList<>();
             if (childrenNodes.isEmpty()) {
                 paths.add(prevEdge == null ? new ArrayList<>() : Lists.newArrayList(prevEdge));
@@ -509,6 +545,16 @@ public class ExperimentalReadThreadingGraph extends ReadThreadingGraphInterface 
             }
 
             return paths;
+        }
+
+        // Returns a unique name based on the memory id that conforms to the restrictions placed on .dot file nodes
+        public String getDotName() {
+            return "TreadingNode_" + Integer.toHexString(hashCode());
+        }
+
+        // Getter for external tools to access a node
+        public Map<MultiSampleEdge, ThreadingNode> getChildrenNodes() {
+            return Collections.unmodifiableMap(childrenNodes);
         }
 
         // Return the count of total evidence supporting this node in the tree

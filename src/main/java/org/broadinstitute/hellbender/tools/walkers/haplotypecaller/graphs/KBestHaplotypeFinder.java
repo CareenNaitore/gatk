@@ -16,7 +16,7 @@ import java.util.stream.Collectors;
  */
 public class KBestHaplotypeFinder<V extends BaseVertex, E extends BaseEdge> {
 
-    private final BaseGraph<V, E> graph;
+    protected final BaseGraph<V, E> graph;
     final Set<V> sinks;
     final Set<V> sources;
 
