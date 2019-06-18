@@ -47,6 +47,7 @@ public class ExperimentalKBestHaplotypeFinder<V extends BaseVertex, E extends Ba
     Map<V, List<E>> contiguousSequences = new HashMap<>();
 
     @Override
+    @SuppressWarnings({"unchecked"})
     public List<KBestHaplotype<V, E>> findBestHaplotypes(final int maxNumberOfHaplotypes) {
         final List<RTBesthaplotype<V, E>> result = new ArrayList<>();
         final PriorityQueue<RTBesthaplotype<V, E>> queue = new PriorityQueue<>(Comparator.comparingDouble(KBestHaplotype<V, E>::score).reversed());
@@ -112,7 +113,7 @@ public class ExperimentalKBestHaplotypeFinder<V extends BaseVertex, E extends Ba
             }
         }
 
-        return result;
+        return result.stream().map(n -> (KBestHaplotype<V, E>) n).collect(Collectors.toList());
     }
 
 //    /**

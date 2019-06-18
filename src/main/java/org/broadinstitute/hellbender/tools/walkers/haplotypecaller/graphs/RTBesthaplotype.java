@@ -36,6 +36,7 @@ public class RTBesthaplotype<T extends BaseVertex, E extends BaseEdge> extends K
     /**
      * This method is the primary engine for parsing
      */
+    @SuppressWarnings({"unchecked"})
     public List<RTBesthaplotype<T, E>> getApplicableNextEdgesBasedOnJunctionTrees(final Collection<E> edgesAtVertex, final int weightThreshold) {
         List<RTBesthaplotype<T, E>> output = new ArrayList<>();
         ExperimentalReadThreadingGraph.ThreadingNode eldestTree = activeNodes.isEmpty() ? null : activeNodes.get(0);
@@ -50,7 +51,7 @@ public class RTBesthaplotype<T extends BaseVertex, E extends BaseEdge> extends K
                 //TODO add SOME sanity check to ensure that the vertex we stand on and the edges we are polling line up
                 for (Map.Entry<MultiSampleEdge, ExperimentalReadThreadingGraph.ThreadingNode> childNode : eldestTree.getChildrenNodes().entrySet()) {
                     ExperimentalReadThreadingGraph.ThreadingNode child = childNode.getValue();
-                    output.add(new RTBesthaplotype<T, E>(this, childNode.getKey(), child.getCount(), totalOut));
+                    output.add(new RTBesthaplotype<T, E>(this, (E) childNode.getKey(), child.getCount(), totalOut));
                 }
                 return output;
 
