@@ -72,6 +72,7 @@ public class ExperimentalKBestHaplotypeFinder<V extends BaseVertex, E extends Ba
                     E edge = outgoingEdges.iterator().next();
                     chain.add(edge);
                     vertexToExtend = graph.getEdgeTarget(edge);
+                    outgoingEdges = graph.outgoingEdgesOf(vertexToExtend);
                 }
                 // Cache the chain result
                 contiguousSequences.put(pathToExtend.getLastVertex(), chain);
@@ -92,6 +93,7 @@ public class ExperimentalKBestHaplotypeFinder<V extends BaseVertex, E extends Ba
 
             // We are at the vertex before one with an inDegree > 1, then we extend the path and add the tree to the list
             } else if ( experimentalReadThreadingGraph.getJunctionTreeForNode((MultiDeBruijnVertex) vertexToExtend) != null) { //TODO make the condition for this actually based on the relevant junction tree
+                // TODO chain can be null but we still need to inherit a thing
                 queue.add(new RTBesthaplotype<>(pathToExtend, chain, 0, experimentalReadThreadingGraph.getJunctionTreeForNode((MultiDeBruijnVertex) vertexToExtend)));
 
             // We must be at a point where the path diverges, use junction trees to resolve if possible
@@ -105,7 +107,9 @@ public class ExperimentalKBestHaplotypeFinder<V extends BaseVertex, E extends Ba
                     }
 
                     for (final E edge : outgoingEdges) {
-                        queue.add(new RTBesthaplotype<>(pathToExtend, edge, edge.getMultiplicity(), totalOutgoingMultiplicity));
+                        List<E> chainCopy = new ArrayList<>(chain);
+                        chainCopy.add(edge);
+                        queue.add(new RTBesthaplotype<>(pathToExtend, chainCopy, edge.getMultiplicity(), totalOutgoingMultiplicity));
                     }
                 } else {
                     queue.addAll(jTPaths);
@@ -115,42 +119,6 @@ public class ExperimentalKBestHaplotypeFinder<V extends BaseVertex, E extends Ba
 
         return result.stream().map(n -> (KBestHaplotype<V, E>) n).collect(Collectors.toList());
     }
-
-//    /**
-//     * Implement Dijkstra's algorithm as described in https://en.wikipedia.org/wiki/K_shortest_path_routing
-//     */
-//    @Override
-//    public List<KBestHaplotype<V, E>> findBestHaplotypes(final int maxNumberOfHaplotypes) {
-//        final List<KBestHaplotype<V, E>> result = new ArrayList<>();
-//        final PriorityQueue<KBestHaplotype<V, E>> queue = new PriorityQueue<>(Comparator.comparingDouble(KBestHaplotype<V, E>::score).reversed());
-//        sources.forEach(source -> queue.add(new KBestHaplotype<>(source, graph)));
-//
-//        final Map<V, MutableInt> vertexCounts = graph.vertexSet().stream()
-//                .collect(Collectors.toMap(v -> v, v -> new MutableInt(0)));
-//
-//        while (!queue.isEmpty() && result.size() < maxNumberOfHaplotypes) {
-//            final KBestHaplotype<V, E> pathToExtend = queue.poll();
-//            final V vertexToExtend = pathToExtend.getLastVertex();
-//            if (sinks.contains(vertexToExtend)) {
-//                result.add(pathToExtend);
-//            } else {
-//                asdf
-//                if (vertexCounts.get(vertexToExtend).getAndIncrement() < maxNumberOfHaplotypes) {
-//                    final Set<E> outgoingEdges = graph.outgoingEdgesOf(vertexToExtend);
-//                    int totalOutgoingMultiplicity = 0;
-//                    for (final BaseEdge edge : outgoingEdges) {
-//                        totalOutgoingMultiplicity += edge.getMultiplicity();
-//                    }
-//
-//                    for (final E edge : outgoingEdges) {
-//                        final V targetVertex = graph.getEdgeTarget(edge);
-//                        queue.add(new KBestHaplotype<>(pathToExtend, edge, totalOutgoingMultiplicity));
-//                    }
-//                }
-//            }
-//        }
-//        return result;
-//    }
 
     /**
      * Removes edges that produces cycles and also dead vertices that do not lead to any sink vertex.

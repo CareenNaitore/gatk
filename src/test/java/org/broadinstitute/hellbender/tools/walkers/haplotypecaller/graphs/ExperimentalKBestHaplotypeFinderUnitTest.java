@@ -6,6 +6,7 @@ import htsjdk.samtools.CigarElement;
 import htsjdk.samtools.CigarOperator;
 import htsjdk.samtools.TextCigarCodec;
 import org.broadinstitute.hellbender.GATKBaseTest;
+import org.broadinstitute.hellbender.tools.walkers.haplotypecaller.readthreading.ExperimentalReadThreadingGraph;
 import org.broadinstitute.hellbender.tools.walkers.haplotypecaller.readthreading.MultiDeBruijnVertex;
 import org.broadinstitute.hellbender.tools.walkers.haplotypecaller.readthreading.ReadThreadingGraph;
 import org.broadinstitute.hellbender.utils.Utils;
@@ -22,6 +23,10 @@ import java.util.stream.IntStream;
 import static org.testng.Assert.*;
 
 public class ExperimentalKBestHaplotypeFinderUnitTest extends GATKBaseTest {
+
+    public static byte[] getBytes(final String alignment) {
+        return alignment.replace("-","").getBytes();
+    }
 
     @Test
     public void testScore(){
@@ -49,24 +54,55 @@ public class ExperimentalKBestHaplotypeFinderUnitTest extends GATKBaseTest {
     }
 
     @Test
-    public void testCycleRemove(){
-        final SeqGraph g = new SeqGraph(3);
-        final SeqVertex v1 = new SeqVertex("a");
-        final SeqVertex v2 = new SeqVertex("b");
-        final SeqVertex v3 = new SeqVertex("c");
-        final SeqVertex v4 = new SeqVertex("d");
-        g.addVertex(v1);   //source
-        g.addVertex(v2);
-        g.addVertex(v3);
-        g.addVertex(v4);  //sink
-        g.addEdge(v1, v2);
-        g.addEdge(v2, v3);
-        g.addEdge(v3, v2); //cycle
-        g.addEdge(v3, v4);
-        final ExperimentalKBestHaplotypeFinder finder = new ExperimentalKBestHaplotypeFinder(g);
-        Assert.assertEquals(finder.sources.size(), 1);
-        Assert.assertEquals(finder.sinks.size(), 1);
+    public void testSimpleJunctionTreeIncludeRefInJunctionTreeTwoSites() {
+        final ExperimentalReadThreadingGraph assembler = new ExperimentalReadThreadingGraph(5);
+        String ref = "GGGAAAT" + "T" + "TCCGGC" + "T" + "CGTTTA"; //Two variant sites in close proximity
+
+        // A simple snip het
+        String altAARead1 = "GGGAAAT" + "A" + "TCCGGC" + "A" + "CGTTTA"; // Replaces a T with an A, then a T with a A
+        String altAARead2 = "GGGAAAT" + "A" + "TCCGGC" + "A" + "CGTTTA"; // Replaces a T with an A, then a T with a A
+        String altTCRead1 = "GGGAAAT" + "T" + "TCCGGC" + "C" + "CGTTTA"; // Keeps the T, then replaces a T with a C
+        String altTCRead2 = "GGGAAAT" + "T" + "TCCGGC" + "C" + "CGTTTA"; // Keeps the T, then replaces a T with a C
+
+        assembler.addSequence("anonymous", getBytes(ref), true);
+        assembler.addSequence("anonymous", getBytes(altAARead1), false);
+        assembler.addSequence("anonymous", getBytes(altAARead2), false);
+        assembler.addSequence("anonymous", getBytes(altTCRead1), false);
+        assembler.addSequence("anonymous", getBytes(altTCRead2), false);
+
+        assembler.generateJunctionTrees();
+        assembler.pruneJunctionTrees(0);
+
+        final ExperimentalKBestHaplotypeFinder finder1 = new ExperimentalKBestHaplotypeFinder(assembler);
+        Assert.assertEquals(finder1.sources.size(), 1);
+        Assert.assertEquals(finder1.sinks.size(), 1);
+
+        List<KBestHaplotype<MultiDeBruijnVertex, MultiSampleEdge>> haplotypes = finder1.findBestHaplotypes(10);
+        System.out.println();
     }
+    //TODO add test to assert proper handling of looping reference paths
+
+
+
+//    @Test
+//    public void testCycleRemove(){
+//        final SeqGraph g = new SeqGraph(3);
+//        final SeqVertex v1 = new SeqVertex("a");
+//        final SeqVertex v2 = new SeqVertex("b");
+//        final SeqVertex v3 = new SeqVertex("c");
+//        final SeqVertex v4 = new SeqVertex("d");
+//        g.addVertex(v1);   //source
+//        g.addVertex(v2);
+//        g.addVertex(v3);
+//        g.addVertex(v4);  //sink
+//        g.addEdge(v1, v2);
+//        g.addEdge(v2, v3);
+//        g.addEdge(v3, v2); //cycle
+//        g.addEdge(v3, v4);
+//        final ExperimentalKBestHaplotypeFinder finder = new ExperimentalKBestHaplotypeFinder(g);
+//        Assert.assertEquals(finder.sources.size(), 1);
+//        Assert.assertEquals(finder.sinks.size(), 1);
+//    }
 
     // TODO this test doesn't really apply anymore, I don't really care about being able to dynamically determine source/sink vertexes especially since they now
     // TODO might be much more complicated because of looping references etc...

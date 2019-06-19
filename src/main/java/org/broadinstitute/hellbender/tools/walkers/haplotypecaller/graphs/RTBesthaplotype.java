@@ -21,11 +21,11 @@ public class RTBesthaplotype<T extends BaseVertex, E extends BaseEdge> extends K
     }
 
     // Constructor to be used for internal calls from {@link #getApplicableNextEdgesBasedOnJunctionTrees()}
-    public RTBesthaplotype(final RTBesthaplotype p, final E edge, final int edgeMultiplicity, final int totalOutgoingMultiplicity) {
-        super(p, Collections.singletonList(edge), computeLogPenaltyScore( edgeMultiplicity, totalOutgoingMultiplicity));
+    public RTBesthaplotype(final RTBesthaplotype p, final List<E> chain, final int edgeMultiplicity, final int totalOutgoingMultiplicity) {
+        super(p, chain, computeLogPenaltyScore( edgeMultiplicity, totalOutgoingMultiplicity));
         activeNodes = new ArrayList<ExperimentalReadThreadingGraph.ThreadingNode>(p.activeNodes);
         // Ensure that the relevant edge has been traversed
-        takeEdge(edge);
+        takeEdge(chain.get(chain.size() - 1));
     }
 
     public RTBesthaplotype(final T initialVertex, final BaseGraph<T,E> graph) {
@@ -51,7 +51,7 @@ public class RTBesthaplotype<T extends BaseVertex, E extends BaseEdge> extends K
                 //TODO add SOME sanity check to ensure that the vertex we stand on and the edges we are polling line up
                 for (Map.Entry<MultiSampleEdge, ExperimentalReadThreadingGraph.ThreadingNode> childNode : eldestTree.getChildrenNodes().entrySet()) {
                     ExperimentalReadThreadingGraph.ThreadingNode child = childNode.getValue();
-                    output.add(new RTBesthaplotype<T, E>(this, (E) childNode.getKey(), child.getCount(), totalOut));
+                    output.add(new RTBesthaplotype<>(this, Collections.singletonList((E) childNode.getKey()), child.getCount(), totalOut));
                 }
                 return output;
 
@@ -72,5 +72,9 @@ public class RTBesthaplotype<T extends BaseVertex, E extends BaseEdge> extends K
             }
             return node.getChildrenNodes().get(edgeTaken);
         }).filter(Objects::nonNull).collect(Collectors.toList());
+    }
+
+    public void addJunctionTree(final ExperimentalReadThreadingGraph.ThreadingTree junctionTreeForNode) {
+        activeNodes.add(junctionTreeForNode.getRootNode());
     }
 }
