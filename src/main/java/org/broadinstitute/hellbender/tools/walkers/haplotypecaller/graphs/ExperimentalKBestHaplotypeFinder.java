@@ -93,7 +93,7 @@ public class ExperimentalKBestHaplotypeFinder<V extends BaseVertex, E extends Ba
 
             // We are at the vertex before one with an inDegree > 1, then we extend the path and add the tree to the list
             } else if ( experimentalReadThreadingGraph.getJunctionTreeForNode((MultiDeBruijnVertex) vertexToExtend) != null) { //TODO make the condition for this actually based on the relevant junction tree
-                // TODO chain can be null but we still need to inherit a thing
+                // TODO chain can be null but we still need to inherit a thing, probably happens whenever we pick up a tree.
                 queue.add(new RTBesthaplotype<>(pathToExtend, chain, 0, experimentalReadThreadingGraph.getJunctionTreeForNode((MultiDeBruijnVertex) vertexToExtend)));
 
             // We must be at a point where the path diverges, use junction trees to resolve if possible
