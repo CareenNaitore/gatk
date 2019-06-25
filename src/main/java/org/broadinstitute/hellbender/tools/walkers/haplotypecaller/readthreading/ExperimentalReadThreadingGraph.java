@@ -25,7 +25,7 @@ import java.util.stream.Collectors;
 public class ExperimentalReadThreadingGraph extends ReadThreadingGraphInterface {
     private final OneShotLogger oneShotDanglingTailLogger = new OneShotLogger(this.getClass());
 
-    private Map<MultiDeBruijnVertex, ThreadingTree> readThreadingJunctionTrees;
+    private Map<MultiDeBruijnVertex, ThreadingTree> readThreadingJunctionTrees = new HashMap<>();
 
     public ExperimentalReadThreadingGraph(int kmerSize) {
         this(kmerSize, false, (byte)6, 1);
@@ -131,13 +131,14 @@ public class ExperimentalReadThreadingGraph extends ReadThreadingGraphInterface 
     @Override
     protected MultiDeBruijnVertex extendChainByOne(final MultiDeBruijnVertex prevVertex, final byte[] sequence, final int kmerStart, final int count, final boolean isRef) {
         final Set<MultiSampleEdge> outgoingEdges = outgoingEdgesOf(prevVertex);
+        final int countToUse = isRef ? 0 : count; //NOTE we do not count reference multiplicity in the graph now
 
         final int nextPos = kmerStart + kmerSize - 1;
         for ( final MultiSampleEdge outgoingEdge : outgoingEdges ) {
             final MultiDeBruijnVertex target = getEdgeTarget(outgoingEdge);
             if ( target.getSuffix() == sequence[nextPos] ) {
                 // we've got a match in the chain, so simply increase the count of the edge by 1 and continue
-                outgoingEdge.incMultiplicity(count);
+                outgoingEdge.incMultiplicity(countToUse);
                 return target;
             }
         }
@@ -148,7 +149,7 @@ public class ExperimentalReadThreadingGraph extends ReadThreadingGraphInterface 
 
         // either use our unique merge vertex, or create a new one in the chain
         final MultiDeBruijnVertex nextVertex = mkergeVertex == null ? createVertex(kmer) : mkergeVertex;
-        addEdge(prevVertex, nextVertex, ((MyEdgeFactory)getEdgeFactory()).createEdge(isRef, count));
+        addEdge(prevVertex, nextVertex, ((MyEdgeFactory)getEdgeFactory()).createEdge(isRef, countToUse));
         return nextVertex;
     }
 
@@ -174,6 +175,12 @@ public class ExperimentalReadThreadingGraph extends ReadThreadingGraphInterface 
         for (final MultiSampleEdge outgoingEdge : outgoingEdges) {
             final MultiDeBruijnVertex target = getEdgeTarget(outgoingEdge);
             if (target.getSuffix() == sequence[nextPos]) {
+                // Only want to create a new tree if we walk into a node with
+                // NOTE: we do this deciding on our path
+                if (vertexWarrantsJunctionTree(prevVertex)) {
+                    nodesToExtend.add(readThreadingJunctionTrees.computeIfAbsent(prevVertex, k -> new ThreadingTree(prevVertex)).getAndIncrementRootNode());
+                }
+
                 // If this node has an out-degree > 1, add the edge we took to existing trees
                 if (outgoingEdges.size() != 1) {
                     // TODO, make an object to encapsulate this operation better
@@ -182,16 +189,23 @@ public class ExperimentalReadThreadingGraph extends ReadThreadingGraphInterface 
                     nodesToExtend.addAll(newNodes);
                 }
 
-                // Only want to create a new tree if we walk into a node with
-                // NOTE: we do this after extending the previous node
-                if (incomingEdgesOf(target).size() > 1) {
-                    nodesToExtend.add(readThreadingJunctionTrees.computeIfAbsent(prevVertex, k -> new ThreadingTree(prevVertex)).getAndIncrementRootNode());
-                }
-
                 return target;
             }
         }
         return null;
+    }
+
+    // Helper method used to determine whether a vertex meets the criteria to hold a junction tree
+    // The current criteria, if any outgoing edge from a particular vertex leads to a vertex with inDegree > 1, then it warrants a tree.
+    // NOTE: this check is necessary to handle the edge cases that may arise when a vertex has multiple exit paths but happens to lead to a vetex that needs a junction tree
+    //TODO test this?
+    private boolean vertexWarrantsJunctionTree(final MultiDeBruijnVertex vertex) {
+        for (MultiSampleEdge edge : outgoingEdgesOf(vertex)) {
+            if (inDegreeOf(getEdgeTarget(edge)) > 1) {
+                return true;
+            }
+        }
+        return false;
     }
 
     //TODO this is a placeholder for when these mechanisms should be more smart, as of right now I can live with the consequnces
@@ -291,17 +305,21 @@ public class ExperimentalReadThreadingGraph extends ReadThreadingGraphInterface 
      * dangling tails worthy of recovering are often a result of the assembly window and thus we choose the last possible
      * kmer as the option.
      *
+     * //TODO both of these are a hack to emulate the current behavior when targetkmer isn't actually a reference kmer. The old behaior
+     * //TODO was to return a singleton list of targetKmer. The real solution is to walk back target kmer to the actual ref base
      *
      * @param targetKmer
      * @return
      */
     private List<MultiDeBruijnVertex> getReferencePathForwardFromKmer(final MultiDeBruijnVertex targetKmer) {
         int finalIndex = referencePath.lastIndexOf(targetKmer);
+        if (finalIndex == -1) return Collections.singletonList(targetKmer);
         return referencePath.subList(finalIndex, referencePath.size());
     }
 
     private List<MultiDeBruijnVertex> getReferencePathBackwardsForKmer(final MultiDeBruijnVertex targetKmer) {
         int firstIndex = referencePath.indexOf(targetKmer);
+        if (firstIndex == -1) return Collections.singletonList(targetKmer);
         return Lists.reverse(referencePath.subList(0, firstIndex + 1));
     }
 

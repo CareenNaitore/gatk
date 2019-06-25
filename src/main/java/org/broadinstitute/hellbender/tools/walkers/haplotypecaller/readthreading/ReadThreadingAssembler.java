@@ -151,6 +151,7 @@ public final class ReadThreadingAssembler {
                     nonRefSeqGraphs.add(result.getSeqGraph());
                 } else {
                     sanityCheckGraph(result.getThreadingGraph(), refHaplotype);
+                    ((ExperimentalReadThreadingGraph)result.getThreadingGraph()).generateJunctionTrees();
                     // add it to graphs with meaningful non-reference features
                     assemblyResultByRTGraph.put(result.getThreadingGraph(),result);
                     nonRefRTGraphs.add(result.getThreadingGraph());
@@ -187,10 +188,13 @@ public final class ReadThreadingAssembler {
             Utils.validateArg( source != null && sink != null, () -> "Both source and sink cannot be null but got " + source + " and sink " + sink + " for graph " + graph);
 
             for (final KBestHaplotype<V, E> kBestHaplotype :
-                    (generateSeqGraph ? new KBestHaplotypeFinder<V, E>(graph,source,sink) : new ExperimentalKBestHaplotypeFinder<V, E>(graph,source,sink))
+                    (generateSeqGraph ?
+                            new KBestHaplotypeFinder<>(graph,source,sink) :
+                            new ExperimentalKBestHaplotypeFinder<>(graph,source,sink))
                             .findBestHaplotypes(numBestHaplotypesPerGraph)) {
                 final Haplotype h = kBestHaplotype.haplotype();
                 if( !returnHaplotypes.contains(h) ) {
+                    // TODO this score seems to be irrelevant at this point...
                     if (kBestHaplotype.isReference()) {
                         refHaplotype.setScore(kBestHaplotype.score());
                     }

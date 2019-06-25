@@ -10,14 +10,10 @@ public class RTBesthaplotype<T extends BaseVertex, E extends BaseEdge> extends K
     // TODO these nodes probably shouldn't be exposed and held externally methinks
     private List<ExperimentalReadThreadingGraph.ThreadingNode> activeNodes;
 
-    public RTBesthaplotype(final RTBesthaplotype p, final List<E> edgesToExtend, final double edgePenalty, final ExperimentalReadThreadingGraph.ThreadingTree treeToAdd) {
+    public RTBesthaplotype(final RTBesthaplotype p, final List<E> edgesToExtend, final double edgePenalty) {
         super(p, edgesToExtend, edgePenalty);
         //this.threadingTreesToConsult = p.threadingTreesToConsult.cop;
         activeNodes = new ArrayList<ExperimentalReadThreadingGraph.ThreadingNode>(p.activeNodes);
-        if (treeToAdd != null) {
-            //threadingTreesToConsult.add(treeToAdd);
-            activeNodes.add(treeToAdd.getRootNode());
-        }
     }
 
     // Constructor to be used for internal calls from {@link #getApplicableNextEdgesBasedOnJunctionTrees()}
@@ -37,7 +33,7 @@ public class RTBesthaplotype<T extends BaseVertex, E extends BaseEdge> extends K
      * This method is the primary engine for parsing
      */
     @SuppressWarnings({"unchecked"})
-    public List<RTBesthaplotype<T, E>> getApplicableNextEdgesBasedOnJunctionTrees(final Collection<E> edgesAtVertex, final int weightThreshold) {
+    public List<RTBesthaplotype<T, E>> getApplicableNextEdgesBasedOnJunctionTrees(final List<E> chain, final int weightThreshold) {
         List<RTBesthaplotype<T, E>> output = new ArrayList<>();
         ExperimentalReadThreadingGraph.ThreadingNode eldestTree = activeNodes.isEmpty() ? null : activeNodes.get(0);
         while (eldestTree != null) {
@@ -51,7 +47,9 @@ public class RTBesthaplotype<T extends BaseVertex, E extends BaseEdge> extends K
                 //TODO add SOME sanity check to ensure that the vertex we stand on and the edges we are polling line up
                 for (Map.Entry<MultiSampleEdge, ExperimentalReadThreadingGraph.ThreadingNode> childNode : eldestTree.getChildrenNodes().entrySet()) {
                     ExperimentalReadThreadingGraph.ThreadingNode child = childNode.getValue();
-                    output.add(new RTBesthaplotype<>(this, Collections.singletonList((E) childNode.getKey()), child.getCount(), totalOut));
+                    List<E> chainCopy = new ArrayList<>(chain);
+                    chainCopy.add((E) childNode.getKey());
+                    output.add(new RTBesthaplotype<>(this, chainCopy, child.getCount(), totalOut));
                 }
                 return output;
 
