@@ -3,6 +3,7 @@ package org.broadinstitute.hellbender.tools.walkers.haplotypecaller.readthreadin
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import org.apache.commons.collections.ListUtils;
 import org.broadinstitute.gatk.nativebindings.smithwaterman.SWOverhangStrategy;
 import org.broadinstitute.hellbender.tools.walkers.haplotypecaller.Kmer;
 import org.broadinstitute.hellbender.tools.walkers.haplotypecaller.graphs.MultiSampleEdge;
@@ -287,7 +288,7 @@ public class ExperimentalReadThreadingGraph extends ReadThreadingGraphInterface 
         }
 
         // now get the reference path from the LCA
-        final List<MultiDeBruijnVertex> refPath = getReferencePathForwardFromKmer(altPath.get(0));
+        final List<MultiDeBruijnVertex> refPath = getReferencePathForwardFromKmer(altPath.get(0), Optional.ofNullable(getHeaviestIncomingEdge(altPath.get(1))));
 
         // create the Smith-Waterman strings to use
         final byte[] refBases = getBasesForPath(refPath, false);
@@ -308,15 +309,37 @@ public class ExperimentalReadThreadingGraph extends ReadThreadingGraphInterface 
      * //TODO both of these are a hack to emulate the current behavior when targetkmer isn't actually a reference kmer. The old behaior
      * //TODO was to return a singleton list of targetKmer. The real solution is to walk back target kmer to the actual ref base
      *
-     * @param targetKmer
+     * @param targetKmer vertex corresponding to the root
      * @return
      */
-    private List<MultiDeBruijnVertex> getReferencePathForwardFromKmer(final MultiDeBruijnVertex targetKmer) {
-        int finalIndex = referencePath.lastIndexOf(targetKmer);
-        if (finalIndex == -1) return Collections.singletonList(targetKmer);
-        return referencePath.subList(finalIndex, referencePath.size());
+    private List<MultiDeBruijnVertex> getReferencePathForwardFromKmer(final MultiDeBruijnVertex targetKmer,
+                                                                      final Optional<MultiSampleEdge> blacklistedEdge) {
+        List<MultiDeBruijnVertex> extraSequence = new ArrayList<>(2);
+        MultiDeBruijnVertex vert = targetKmer;
+        int finalIndex = referencePath.lastIndexOf(vert);
+
+        while (finalIndex == -1 &&  vert != null) {
+            // If the current verex is not a reference vertex but exists, add it to our list of extra bases to append to the reference
+            extraSequence.add(vert);
+
+            final Set<MultiSampleEdge> outgoingEdges = outgoingEdgesOf(vert);
+
+            // singleton or empty set
+            final Set<MultiSampleEdge> blacklistedEdgeSet = blacklistedEdge.isPresent() ? Collections.singleton(blacklistedEdge.get()) : Collections.emptySet();
+
+            // walk forward while the path is unambiguous
+            final List<MultiSampleEdge> edges = outgoingEdges.stream().filter(e -> !blacklistedEdgeSet.contains(e)).limit(2).collect(Collectors.toList());
+
+            vert = edges.size() == 1 ? getEdgeTarget(edges.get(0)) : null;
+            finalIndex = vert == null ? -1 : referencePath.lastIndexOf(vert);
+        }
+
+        // if we found extra sequence append it to the front of the
+        extraSequence.addAll(finalIndex != -1 ? referencePath.subList(finalIndex, referencePath.size()) : Collections.emptyList());
+        return extraSequence;
     }
 
+    // TODO this behavior is frankly silly and needs to be fixed, there is no way upwards paths should be dangingling head recovered differently
     private List<MultiDeBruijnVertex> getReferencePathBackwardsForKmer(final MultiDeBruijnVertex targetKmer) {
         int firstIndex = referencePath.indexOf(targetKmer);
         if (firstIndex == -1) return Collections.singletonList(targetKmer);
