@@ -1,25 +1,24 @@
 package org.broadinstitute.hellbender.tools.walkers.haplotypecaller.graphs;
 
 import com.google.common.annotations.VisibleForTesting;
-import org.apache.commons.lang3.mutable.MutableInt;
 import org.broadinstitute.hellbender.tools.walkers.haplotypecaller.readthreading.ExperimentalReadThreadingGraph;
 import org.broadinstitute.hellbender.tools.walkers.haplotypecaller.readthreading.MultiDeBruijnVertex;
-import org.broadinstitute.hellbender.utils.Utils;
-import org.jgrapht.alg.CycleDetector;
 
 import java.util.*;
 import java.util.stream.Collectors;
 
-public class ExperimentalKBestHaplotypeFinder<V extends BaseVertex, E extends BaseEdge> extends  KBestHaplotypeFinder<V, E> {
-    // TODO PARAMETERETERIZE ME
+public class JunctionTreeKBestHaplotypeFinder<V extends BaseVertex, E extends BaseEdge> extends KBestHaplotypeFinder<V, E> {
     public static final int DEFAULT_OUTGOING_JT_EVIDENCE_THRESHOLD_TO_BELEIVE = 3;
-
     private int weightThresholdToUse = DEFAULT_OUTGOING_JT_EVIDENCE_THRESHOLD_TO_BELEIVE;
 
+    // List for mapping vertexes that start chains of kmers that do not diverge, used to cut down on repeated graph traversal
+    Map<V, List<E>> contiguousSequences = new HashMap<>();
+
+    // Graph to be operated on, in this case cast as an ExperimentalReadThreadingGraph
     ExperimentalReadThreadingGraph experimentalReadThreadingGraph;
 
-    public ExperimentalKBestHaplotypeFinder(BaseGraph<V, E> graph, Set<V> sources, Set<V> sinks) {
-        super(graph, sources, sinks);
+    public JunctionTreeKBestHaplotypeFinder(final BaseGraph<V, E> graph, final Set<V> sources, Set<V> sinks, final int branchWeightThreshold) {
+        super(sinks, sources, graph);
         if (graph instanceof ExperimentalReadThreadingGraph) {
             experimentalReadThreadingGraph = (ExperimentalReadThreadingGraph) graph;
         } else {
@@ -30,14 +29,21 @@ public class ExperimentalKBestHaplotypeFinder<V extends BaseVertex, E extends Ba
     /**
      * Constructor for the special case of a single source and sink
      */
-    public ExperimentalKBestHaplotypeFinder(final BaseGraph<V, E> graph, final V source, final V sink) {
-        this(graph, Collections.singleton(source), Collections.singleton(sink));
+    public JunctionTreeKBestHaplotypeFinder(final BaseGraph<V, E> graph, final V source, final V sink) {
+        this(graph, Collections.singleton(source), Collections.singleton(sink), DEFAULT_OUTGOING_JT_EVIDENCE_THRESHOLD_TO_BELEIVE);
+    }
+
+    /**
+     * Constructor for the special case of a single source and sink
+     */
+    public JunctionTreeKBestHaplotypeFinder(final BaseGraph<V, E> graph, final V source, final V sink, final int branchWeightThreshold) {
+        this(graph, Collections.singleton(source), Collections.singleton(sink), branchWeightThreshold);
     }
 
     /**
      * Constructor for the default case of all sources and sinks
      */
-    public ExperimentalKBestHaplotypeFinder(final BaseGraph<V, E> graph) {
+    public JunctionTreeKBestHaplotypeFinder(final BaseGraph<V, E> graph) {
         this(graph, graph.getReferenceSourceVertex(), graph.getReferenceSinkVertex());
     }
 
@@ -47,13 +53,33 @@ public class ExperimentalKBestHaplotypeFinder<V extends BaseVertex, E extends Ba
         return graph;
     }
 
-    Map<V, List<E>> contiguousSequences = new HashMap<>();
-
     @VisibleForTesting
     public void setWeightThresholdToUse(final int outgoingWeight) {
         weightThresholdToUse = outgoingWeight;
     }
 
+
+    /**
+     * The primary engine for finding haplotypes based on junction trees.
+     *
+     * Best haplotypes are discovered by a modified Djikstra's algorithm. Paths are genearated from the reference start
+     * kmer and proceed forward until they encounter one of the following stop conditions and are treated accordingly:
+     *  (1) Encounter a kmer with a JunctionTree - In this case the junction tree is added to a JunctionTree queue maintained
+     *                                             by the KBestHaplotypePath.
+     *  (2) Encounter a kmer with out degree > 1 - In this case we consult the oldest JunctionTree in the experimental path,
+     *                                             and add new KBestHaplotypePaths to the Queue for each branch on the tree
+     *                                             for that node with weights calculated based on edge weight in the junction tree.
+     *                                             If the eldest tree has insufficient data then it is popped off the queue and a younger
+     *                                             tree is consulted, if no younger tree is consulted then the raw graph edge
+     *                                             weights for the fork are used to generate paths instead.
+     *  (3) Encounter a ReferenceSink - If a reference sink is encountered, close out the path and add it to the results. TODO this will be subjected to change
+     *
+     * Note: A cache is maintained of vertexes to contiguous sequences of paths in order to cut down on repeated traversal
+     *       of the same segments of the graph for each path.
+     *
+     * @param maxNumberOfHaplotypes maximum number of haplotypes to discover.
+     * @return A list of the best scoring haplotypes for hte GraphBasedKBestHaplotypeFinder
+     */
     @Override
     @SuppressWarnings({"unchecked"})
     public List<KBestHaplotype<V, E>> findBestHaplotypes(final int maxNumberOfHaplotypes) {
@@ -61,23 +87,22 @@ public class ExperimentalKBestHaplotypeFinder<V extends BaseVertex, E extends Ba
         final PriorityQueue<RTBesthaplotype<V, E>> queue = new PriorityQueue<>(Comparator.comparingDouble(KBestHaplotype<V, E>::score).reversed());
         sources.forEach(source -> queue.add(new RTBesthaplotype<>(source, graph)));
 
-        //TODO this optimization has been disabled for now to simplify the code, this will probably need to be reenabled later
-//        final Map<V, MutableInt> vertexCounts = graph.vertexSet().stream()
-//                .collect(Collectors.toMap(v -> v, v -> new MutableInt(0)));
-
-        // Iterate over paths in the queue
+        // Iterate over paths in the queue, unless we are out of paths of maxHaplotypes to find
         while (!queue.isEmpty() && result.size() < maxNumberOfHaplotypes) {
             final RTBesthaplotype<V, E> pathToExtend = queue.poll();
             V vertexToExtend = pathToExtend.getLastVertex();
-            final List<E> chain = contiguousSequences.computeIfAbsent(vertexToExtend, k -> new ArrayList<>());
+            Set<E> outgoingEdges = graph.outgoingEdgesOf(vertexToExtend);
 
-            // If we have a cached chain use its target vertex
+            // Check if we have cached the current vertex in a contiguous sequence
+            final List<E> chain = contiguousSequences.computeIfAbsent(vertexToExtend, k -> new ArrayList<>());
+            // if not, step forward until a vertex meets one of conditions (1), (2), or (3) are met
             if (chain.isEmpty()){
-                Set<E> outgoingEdges = graph.outgoingEdgesOf(vertexToExtend);
                 // Keep going until we reach a fork, reference sink, or fork
-                while (!sinks.contains(vertexToExtend) && outgoingEdges.size() == 1 &&
-                        experimentalReadThreadingGraph.getJunctionTreeForNode((MultiDeBruijnVertex) vertexToExtend) == null) {
-                    E edge = outgoingEdges.iterator().next();
+                while ( outgoingEdges.size() == 1 && // Case (2)
+                        experimentalReadThreadingGraph.getJunctionTreeForNode((MultiDeBruijnVertex) vertexToExtend) == null && // Case (1)
+                        !sinks.contains(vertexToExtend)) // Case (3)
+                    {
+                    final E edge = outgoingEdges.iterator().next();
                     chain.add(edge);
                     vertexToExtend = graph.getEdgeTarget(edge);
                     outgoingEdges = graph.outgoingEdgesOf(vertexToExtend);
@@ -88,10 +113,9 @@ public class ExperimentalKBestHaplotypeFinder<V extends BaseVertex, E extends Ba
             } else {
                 // We have already expanded this part of the graph, use it.
                 vertexToExtend = graph.getEdgeTarget(chain.get(chain.size() - 1));
+                outgoingEdges = graph.outgoingEdgesOf(vertexToExtend);
             }
-            // vertexToExtend is necessarily at the next "interesting" point
-
-            Collection<E> outgoingEdges = graph.outgoingEdgesOf(vertexToExtend);
+            // vertexToExtend and outgoingEdges are necessarily at the next "interesting" point
 
             // In the event we have a junction tree on top of a vertex with outDegree > 1, we add this first before we traverse paths
             if ( experimentalReadThreadingGraph.getJunctionTreeForNode((MultiDeBruijnVertex) vertexToExtend) != null) { //TODO make the condition for this actually based on the relevant junction tree
@@ -114,7 +138,7 @@ public class ExperimentalKBestHaplotypeFinder<V extends BaseVertex, E extends Ba
                 if (outgoingEdges.size() > 1) {
                     List<RTBesthaplotype<V, E>> jTPaths = pathToExtend.getApplicableNextEdgesBasedOnJunctionTrees(chain, weightThresholdToUse);
                     if (jTPaths.isEmpty()) {
-                        // Standard behavior from the old KBestHaplotypeFinder
+                        // Standard behavior from the old GraphBasedKBestHaplotypeFinder
                         int totalOutgoingMultiplicity = 0;
                         for (final BaseEdge edge : outgoingEdges) {
                             totalOutgoingMultiplicity += edge.getMultiplicity();
@@ -143,15 +167,6 @@ public class ExperimentalKBestHaplotypeFinder<V extends BaseVertex, E extends Ba
         }
 
         return result.stream().map(n -> (KBestHaplotype<V, E>) n).collect(Collectors.toList());
-    }
-
-    /**
-     * Removes edges that produces cycles and also dead vertices that do not lead to any sink vertex.
-     * @return never {@code null}.
-     */
-    @Override
-    protected BaseGraph<V, E> removeCyclesAndVerticesThatDontLeadToSinks(final BaseGraph<V, E> original, final Collection<V> sources, final Set<V> sinks) {
-        return original;
     }
 
 }

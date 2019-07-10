@@ -505,7 +505,7 @@ public class ExperimentalReadThreadingGraphUnitTest extends BaseTest {
         rtgraph.buildGraphIfNecessary();
 
         //final SeqGraph graph = rtgraph.toSequenceGraph();
-        final List<KBestHaplotype> paths = new KBestHaplotypeFinder(rtgraph, rtgraph.getReferenceSourceVertex(), rtgraph.getReferenceSinkVertex()).findBestHaplotypes();
+        final List<KBestHaplotype> paths = new GraphBasedKBestHaplotypeFinder(rtgraph, rtgraph.getReferenceSourceVertex(), rtgraph.getReferenceSinkVertex()).findBestHaplotypes();
         Assert.assertEquals(paths.size(), 1);
     }
 
@@ -677,7 +677,7 @@ public class ExperimentalReadThreadingGraphUnitTest extends BaseTest {
             Assert.assertTrue(mergeResult == 1);
         }
 
-        final List<String> paths = new ExperimentalKBestHaplotypeFinder<>(rtgraph).findBestHaplotypes().stream()
+        final List<String> paths = new JunctionTreeKBestHaplotypeFinder<>(rtgraph).findBestHaplotypes().stream()
                 .map(kBestHaplotype -> new String(kBestHaplotype.getBases()))
                 .distinct()
                 .sorted()
@@ -731,7 +731,7 @@ public class ExperimentalReadThreadingGraphUnitTest extends BaseTest {
         tests.add(new Object[]{"XXXTXXXAACCGGTTACGT", "AYCGGTTACGT", "7M", true});         // very little data
         tests.add(new Object[]{"XXTXXXXAACCGGTTACGT", "YCCGGTTACGT", "6M", true});         // begins in mismatch
 
-        //TODO these tests are diffiuclt to evaluate, as KBestHaplotypeFinder currently cannot handle looping sequence which poses a problem for testing explicitly looping refrence behavior
+        //TODO these tests are diffiuclt to evaluate, as GraphBasedKBestHaplotypeFinder currently cannot handle looping sequence which poses a problem for testing explicitly looping refrence behavior
 //        tests.add(new Object[]{"XXTXXXXAACCGGTTACGTTTACGT", "AAYCGGTTACGT", "8M", true});        // dangling head hanging off of a non-unique reference kmer
 //        tests.add(new Object[]{"XXTXXXXAACCGGTTACGTCGGTTACGT", "AAYCGGTTACGT", "8M", true});
 
@@ -784,7 +784,7 @@ public class ExperimentalReadThreadingGraphUnitTest extends BaseTest {
         // confirm that we created the appropriate bubble in the graph only if expected
         rtgraph.cleanNonRefPaths();
 //        final SeqGraph seqGraph = rtgraph.toSequenceGraph();
-        final List<KBestHaplotype> paths = new ExperimentalKBestHaplotypeFinder(rtgraph, rtgraph.getReferenceSourceVertex(), rtgraph.getReferenceSinkVertex()).findBestHaplotypes();
+        final List<KBestHaplotype> paths = new JunctionTreeKBestHaplotypeFinder(rtgraph, rtgraph.getReferenceSourceVertex(), rtgraph.getReferenceSinkVertex()).findBestHaplotypes();
         Assert.assertEquals(paths.size(), shouldBeMerged ? 2 : 1);
     }
 
