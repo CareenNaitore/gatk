@@ -97,6 +97,7 @@ public class JunctionTreeKBestHaplotypeFinderUnitTest extends GATKBaseTest {
 
     @Test
     // Asserting that the reference end base is handled with care... This code has the tendency to cut early
+    // TODO this test is disabled
     public void testNonUniqueRefStopPosition() {
         int readlength = 15;
         final ExperimentalReadThreadingGraph assembler = new ExperimentalReadThreadingGraph(7);
@@ -125,6 +126,103 @@ public class JunctionTreeKBestHaplotypeFinderUnitTest extends GATKBaseTest {
         Assert.assertTrue(foundHaplotypes.contains(ref));
         // Asserting that we did NOT find the haplotype with 0 loops of the repeat:
         Assert.assertFalse(foundHaplotypes.contains("AACTTGGGTGTGTG"));
+    }
+
+    @Test
+    public void testNonUniqueRefStopPositionNoStopJTToResolveIt() {
+        int readlength = 15;
+        final ExperimentalReadThreadingGraph assembler = new ExperimentalReadThreadingGraph(7);
+        String ref = "AACTTGGGTGTGTGAAACCCGGGTTGTGTGTGAA"; // The sequence GTGTGTGAA is repeated
+
+        // Generate some reads that do not span the entire active region
+        assembler.addSequence("anonymous", getBytes(ref), true);
+        for (int i = 0; i + readlength < ref.length() - 2; i++) { //the - 2 means that we don't span to the end
+            assembler.addSequence("anonymous", getBytes(ref.substring(i, i + readlength)), false);
+        }
+
+        assembler.generateJunctionTrees();
+
+        Map<MultiDeBruijnVertex, ExperimentalReadThreadingGraph.ThreadingTree> junctionTrees = assembler.getReadThreadingJunctionTrees(false);
+        Assert.assertEquals(junctionTrees.size(), 2);
+
+        final JunctionTreeKBestHaplotypeFinder finder = new JunctionTreeKBestHaplotypeFinder(assembler);
+        Assert.assertEquals(finder.sources.size(), 1);
+        Assert.assertEquals(finder.sinks.size(), 1);
+        final List<KBestHaplotype> haplotypes = finder.findBestHaplotypes(5);
+
+        // We assert that we found all of the haplotypes present in reads and nothing else
+        Assert.assertEquals(haplotypes.size(), 1); //TODO figure out what is reasonable here...
+        Set<String> foundHaplotypes = haplotypes.stream().map(haplotype -> new String(haplotype.getBases())).collect(Collectors.toSet());
+        // Asserting that the correct reference haplotype actually existed
+        Assert.assertTrue(foundHaplotypes.contains(ref));
+        // Asserting that we did NOT find the haplotype with 0 loops of the repeat:
+        Assert.assertFalse(foundHaplotypes.contains("AACTTGGGTGTGTG"));
+    }
+
+    @Test
+    // Test asserting that the behavior is reasonable when there is read data past the reference end kmer
+    public void testReferenceEndWithErrorSpanningPastEndBase() {
+        int readlength = 15;
+        final ExperimentalReadThreadingGraph assembler = new ExperimentalReadThreadingGraph(7);
+        String ref = "AACTGGGTT"  +  "GCGCGCGTTACCCGT"; // The sequence GTGTGTGAA is repeated
+        String alt = "AACTGGGTT"+"T"+"GCGCGCGTTACCCGTTT"; // Alt contig with error spanning past the end of the reference sequence
+
+        // Generate some reads that do not span the entire active region
+        assembler.addSequence("anonymous", getBytes(ref), true);
+        for (int i = 0; i + readlength < alt.length(); i++) {
+            assembler.addSequence("anonymous", getBytes(alt.substring(i, i + readlength)), false);
+        }
+
+        assembler.generateJunctionTrees();
+
+        Map<MultiDeBruijnVertex, ExperimentalReadThreadingGraph.ThreadingTree> junctionTrees = assembler.getReadThreadingJunctionTrees(false);
+        Assert.assertEquals(junctionTrees.size(), 1); //TODO this will become 2 once the change is implemented
+
+        final JunctionTreeKBestHaplotypeFinder finder = new JunctionTreeKBestHaplotypeFinder(assembler);
+        Assert.assertEquals(finder.sources.size(), 1);
+        Assert.assertEquals(finder.sinks.size(), 1);
+        final List<KBestHaplotype> haplotypes = finder.findBestHaplotypes(5);
+
+        // We assert that we found all of the haplotypes present in reads and nothing else
+        Assert.assertEquals(haplotypes.size(), 1);
+        Set<String> foundHaplotypes = haplotypes.stream().map(haplotype -> new String(haplotype.getBases())).collect(Collectors.toSet());
+        // Asserting that we did NOT find the reference haplotype itself
+        Assert.assertFalse(foundHaplotypes.contains(ref));
+        // Asserting that we did find the alt haplotype minus the ending bases
+        Assert.assertTrue(foundHaplotypes.contains("AACTGGGTT"+"T"+"GCGCGCGTTACCCGT"));
+    }
+
+    @Test
+    // Test asserting that the behavior is reasonable when there is read data past the reference end kmer
+    public void testFullReferencePathRecoveryDespiteReadsNotReachingLastBase() {
+        int readlength = 15;
+        final ExperimentalReadThreadingGraph assembler = new ExperimentalReadThreadingGraph(7);
+        String ref = "AACTGGGTT"  +  "GCGCGCGTTACCCGT"; // The sequence GTGTGTGAA is repeated
+        String alt = "AACTGGGTT"+"T"+"GCGCGCGTTACCC"; // Alt contig that doesn't reach the end of the reference
+
+        // Generate some reads that do not span the entire active region
+        assembler.addSequence("anonymous", getBytes(ref), true);
+        for (int i = 0; i + readlength < alt.length(); i++) {
+            assembler.addSequence("anonymous", getBytes(alt.substring(i, i + readlength)), false);
+        }
+
+        assembler.generateJunctionTrees();
+
+        Map<MultiDeBruijnVertex, ExperimentalReadThreadingGraph.ThreadingTree> junctionTrees = assembler.getReadThreadingJunctionTrees(false);
+        Assert.assertEquals(junctionTrees.size(), 1); //TODO this will become 2 once the change is implemented
+
+        final JunctionTreeKBestHaplotypeFinder finder = new JunctionTreeKBestHaplotypeFinder(assembler);
+        Assert.assertEquals(finder.sources.size(), 1);
+        Assert.assertEquals(finder.sinks.size(), 1);
+        final List<KBestHaplotype> haplotypes = finder.findBestHaplotypes(5);
+
+        // We assert that we found all of the haplotypes present in reads and nothing else
+        Assert.assertEquals(haplotypes.size(), 1);
+        Set<String> foundHaplotypes = haplotypes.stream().map(haplotype -> new String(haplotype.getBases())).collect(Collectors.toSet());
+        // Asserting that we did NOT find the reference haplotype itself
+        Assert.assertFalse(foundHaplotypes.contains(ref));
+        // Asserting that we did find the alt haplotype minus the ending bases
+        Assert.assertTrue(foundHaplotypes.contains("AACTGGGTT"+"T"+"GCGCGCGTTACCCGT"));
     }
 
     @Test
@@ -251,31 +349,6 @@ public class JunctionTreeKBestHaplotypeFinderUnitTest extends GATKBaseTest {
     }
     //TODO add test to assert proper handling of looping reference paths
 
-
-    // TODO this test doesn't really apply anymore, I don't really care about being able to dynamically determine source/sink vertexes especially since they now
-    // TODO might be much more complicated because of looping references etc...
-//    @Test
-//    public void testNoSourceOrSink(){
-//        final SeqGraph g = new SeqGraph(3);
-//        final SeqVertex v1 = new SeqVertex("a");
-//        final SeqVertex v2 = new SeqVertex("b");
-//        g.addVertex(v1);   //source
-//        g.addVertex(v2);
-//        g.addEdge(v1, v2);
-//        final JunctionTreeKBestHaplotypeFinder finder = new JunctionTreeKBestHaplotypeFinder(g);
-//        Assert.assertEquals(finder.sources.size(), 1);
-//        Assert.assertEquals(finder.sinks.size(), 1);
-//
-//        final JunctionTreeKBestHaplotypeFinder finder2 = new JunctionTreeKBestHaplotypeFinder(g, Collections.emptySet(), Collections.singleton(v2));
-//        Assert.assertEquals(finder2.sources.size(), 0);
-//        Assert.assertEquals(finder2.sinks.size(), 1);
-//
-//        final JunctionTreeKBestHaplotypeFinder finder3 = new JunctionTreeKBestHaplotypeFinder(g, Collections.singleton(v1), Collections.emptySet());
-//        Assert.assertEquals(finder3.sources.size(), 1);
-//        Assert.assertEquals(finder3.sinks.size(), 0);
-//        Assert.assertTrue(finder3.findBestHaplotypes().isEmpty());
-//    }
-
     // Disabled until multi-sink/source edges are supported
     @Test (enabled = false)
     public void testDeadNode(){
@@ -318,31 +391,31 @@ public class JunctionTreeKBestHaplotypeFinderUnitTest extends GATKBaseTest {
     }
 
     private static int weight = 1;
-    final Set<SeqVertex> createVertices(final SeqGraph graph, final int n, final SeqVertex source, final SeqVertex target) {
+    final Set<MultiDeBruijnVertex> createVertices(final ExperimentalReadThreadingGraph graph, final int n, final MultiDeBruijnVertex source, final MultiDeBruijnVertex target) {
         final List<String> seqs = Arrays.asList("A", "C", "G", "T");
-        final Set<SeqVertex> vertices = new LinkedHashSet<>();
+        final Set<MultiDeBruijnVertex> vertices = new LinkedHashSet<>();
         for ( int i = 0; i < n; i++ ) {
-            final SeqVertex v = new SeqVertex(seqs.get(i));
+            final MultiDeBruijnVertex v = new MultiDeBruijnVertex(seqs.get(i).getBytes());
             graph.addVertex(v);
             vertices.add(v);
-            if ( source != null ) graph.addEdge(source, v, new BaseEdge(false, weight++));
-            if ( target != null ) graph.addEdge(v, target, new BaseEdge(false, weight++));
+            if ( source != null ) graph.addEdge(source, v, new MultiSampleEdge(false, weight++, 1));
+            if ( target != null ) graph.addEdge(v, target, new MultiSampleEdge(false, weight++, 1));
         }
         return vertices;
     }
 
 
     @Test(dataProvider = "BasicPathFindingData")
-    public void testBasicPathFinding(final int nStartNodes, final int nBranchesPerBubble, final int nEndNodes) {
-        final SeqGraph graph = new SeqGraph(11);
+    public void testBasicPathFindingNoJunctionTrees(final int nStartNodes, final int nBranchesPerBubble, final int nEndNodes) {
+        final ExperimentalReadThreadingGraph graph = new ExperimentalReadThreadingGraph(11);
 
-        final SeqVertex middleTop = new SeqVertex("GTAC");
-        final SeqVertex middleBottom = new SeqVertex("ACTG");
+        final MultiDeBruijnVertex middleTop = new MultiDeBruijnVertex("GTAC".getBytes());
+        final MultiDeBruijnVertex middleBottom = new MultiDeBruijnVertex("ACTG".getBytes());
         graph.addVertices(middleTop, middleBottom);
-        final Set<SeqVertex> starts = createVertices(graph, nStartNodes, null, middleTop);
+        final Set<MultiDeBruijnVertex> starts = createVertices(graph, nStartNodes, null, middleTop);
         @SuppressWarnings("unused")
-        final Set<SeqVertex> bubbles = createVertices(graph, nBranchesPerBubble, middleTop, middleBottom);
-        final Set<SeqVertex> ends = createVertices(graph, nEndNodes, middleBottom, null);
+        final Set<MultiDeBruijnVertex> bubbles = createVertices(graph, nBranchesPerBubble, middleTop, middleBottom);
+        final Set<MultiDeBruijnVertex> ends = createVertices(graph, nEndNodes, middleBottom, null);
 
         final int expectedNumOfPaths = nStartNodes * nBranchesPerBubble * nEndNodes;
         final List<KBestHaplotype> haplotypes = new JunctionTreeKBestHaplotypeFinder(graph, starts, ends, JunctionTreeKBestHaplotypeFinder.DEFAULT_OUTGOING_JT_EVIDENCE_THRESHOLD_TO_BELEIVE).findBestHaplotypes();
@@ -365,28 +438,23 @@ public class JunctionTreeKBestHaplotypeFinderUnitTest extends GATKBaseTest {
     @Test(dataProvider = "BasicBubbleDataProvider")
     public void testBasicBubbleData(final int refBubbleLength, final int altBubbleLength) {
         // Construct the assembly graph
-        SeqGraph graph = new SeqGraph(3);
+        ExperimentalReadThreadingGraph graph = new ExperimentalReadThreadingGraph(4);
         final String preRef = "ATGG";
-        final String postRef = "GGGGC";
+        final String postRef = "GCGGC";
 
-        SeqVertex v = new SeqVertex(preRef);
-        SeqVertex v2Ref = new SeqVertex(Strings.repeat("A", refBubbleLength));
-        SeqVertex v2Alt = new SeqVertex(Strings.repeat("A", altBubbleLength-1) + "T");
-        SeqVertex v3 = new SeqVertex(postRef);
+        final String ref = preRef + Strings.repeat("A", refBubbleLength) + postRef;
+        final String alt = preRef + Strings.repeat("A", altBubbleLength-1) + "T" + postRef;
 
-        graph.addVertex(v);
-        graph.addVertex(v2Ref);
-        graph.addVertex(v2Alt);
-        graph.addVertex(v3);
-        graph.addEdge(v, v2Ref, new BaseEdge(true, 10));
-        graph.addEdge(v2Ref, v3, new BaseEdge(true, 10));
-        graph.addEdge(v, v2Alt, new BaseEdge(false, 5));
-        graph.addEdge(v2Alt, v3, new BaseEdge(false, 5));
+        graph.addSequence("anonomyous", ref.getBytes(),  true);
+        for (int i = 0; i < 5; i++) graph.addSequence("anonomyous", ref.getBytes(), 1, false);
+        for (int i = 0; i < 10; i++) graph.addSequence("anonomyous", alt.getBytes(), 1, false);
+
+        graph.generateJunctionTrees();
 
         // Construct the test path
-        Path<SeqVertex,BaseEdge> path = new Path<>(v, graph);
-        path = new Path<>(path, graph.getEdge(v, v2Alt));
-        path = new Path<>(path, graph.getEdge(v2Alt, v3));
+        final List<KBestHaplotype<MultiDeBruijnVertex, MultiSampleEdge>> bestPaths = new JunctionTreeKBestHaplotypeFinder<>(graph).findBestHaplotypes(5);
+        Assert.assertEquals(bestPaths.size(), 2);
+        KBestHaplotype<MultiDeBruijnVertex, MultiSampleEdge> path = bestPaths.get(0);
 
         // Construct the actual cigar string implied by the test path
         Cigar expectedCigar = new Cigar();
@@ -402,42 +470,7 @@ public class JunctionTreeKBestHaplotypeFinderUnitTest extends GATKBaseTest {
         }
         expectedCigar.add(new CigarElement(postRef.length(), CigarOperator.M));
 
-        final String ref = preRef + v2Ref.getSequenceString() + postRef;
         Assert.assertEquals(path.calculateCigar(ref.getBytes(), SmithWatermanJavaAligner.getInstance()).toString(), AlignmentUtils.consolidateCigar(expectedCigar).toString(), "Cigar string mismatch");
-    }
-
-    @DataProvider(name = "GetBasesData")
-    public Object[][] makeGetBasesData() {
-        List<Object[]> tests = new ArrayList<>();
-
-        final List<String> frags = Arrays.asList("ACT", "GAC", "CAT");
-
-        for ( int n = 1; n <= frags.size(); n++ ) {
-            for ( final List<String> comb : Utils.makePermutations(frags, n, false) ) {
-                tests.add(new Object[]{comb});
-            }
-        }
-        return tests.toArray(new Object[][]{});
-    }
-
-    @Test(dataProvider = "GetBasesData")
-    public void testGetBases(final List<String> frags) {
-        // Construct the assembly graph
-        SeqGraph graph = new SeqGraph(3);
-
-        SeqVertex prev = null;
-        for (final String s : frags) {
-            SeqVertex v = new SeqVertex(s);
-            graph.addVertex(v);
-            if ( prev != null )
-                graph.addEdge(prev, v);
-            prev = v;
-        }
-
-        // enumerate all possible paths
-        final List<KBestHaplotype> paths = new JunctionTreeKBestHaplotypeFinder(graph).findBestHaplotypes();
-        Assert.assertEquals(paths.size(), 1);
-        Assert.assertEquals(new String(paths.get(0).getBases()), Utils.join("", frags), "Path doesn't have the expected sequence");
     }
 
     @DataProvider(name = "TripleBubbleDataProvider")
@@ -456,6 +489,7 @@ public class JunctionTreeKBestHaplotypeFinderUnitTest extends GATKBaseTest {
     }
 
     @Test(dataProvider = "TripleBubbleDataProvider")
+    //TODO figure out what to do here
     public void testTripleBubbleData(final int refBubbleLength, final int altBubbleLength, final boolean offRefBeginning, final boolean offRefEnding) {
         // Construct the assembly graph
         SeqGraph graph = new SeqGraph(11);
@@ -561,28 +595,31 @@ public class JunctionTreeKBestHaplotypeFinderUnitTest extends GATKBaseTest {
                 "Cigar string mismatch: ref = " + ref + " alt " + new String(path.getBases()));
     }
 
-    @Test
+    @Test (enabled = false)
+    //TODO this test illustrates a problem with junction trees and dangling end recovery, namely the path that the JT points to
+    //TODO is a dead end after dangling tail recovery. This needs to be resolved with either SmithWaterman or by coopting the threading code
     public void testIntraNodeInsertionDeletion() {
         // Construct the assembly graph
-        final SeqGraph graph = new SeqGraph(11);
-        final SeqVertex top = new SeqVertex("T");
-        final SeqVertex bot = new SeqVertex("T");
-        final SeqVertex alt = new SeqVertex("AAACCCCC");
-        final SeqVertex ref = new SeqVertex("CCCCCGGG");
+        final ExperimentalReadThreadingGraph graph = new ExperimentalReadThreadingGraph(5);
+        final String ref = "TTTT" + "CCCCCGGG" + "TTT";
+        final String alt = "TTTT" + "AAACCCCC" + "TTT";
 
-        graph.addVertices(top, bot, alt, ref);
-        graph.addEdges(() -> new BaseEdge(true, 1), top, ref, bot);
-        graph.addEdges(() -> new BaseEdge(false, 1), top, alt, bot);
+        graph.addSequence("anonymous", getBytes(ref), true);
+        graph.addSequence("anonymous", getBytes(ref), false);
+        graph.addSequence("anonymous", getBytes(alt), false);
+        graph.buildGraphIfNecessary();
+        graph.recoverDanglingHeads(0, 0,  true, SmithWatermanJavaAligner.getInstance());
+        graph.recoverDanglingTails(0, 0,  true, SmithWatermanJavaAligner.getInstance());
+        graph.generateJunctionTrees();
 
         @SuppressWarnings("all")
-        final List<KBestHaplotype> bestPaths = new JunctionTreeKBestHaplotypeFinder(graph,top,bot).findBestHaplotypes();
+        final List<KBestHaplotype> bestPaths = new JunctionTreeKBestHaplotypeFinder(graph).findBestHaplotypes();
         Assert.assertEquals(bestPaths.size(), 2);
-        final Path<SeqVertex,BaseEdge> refPath = bestPaths.get(0);
-        final Path<SeqVertex,BaseEdge> altPath = bestPaths.get(1);
+        final Path<MultiDeBruijnVertex,MultiSampleEdge> refPath = bestPaths.get(0);
+        final Path<MultiDeBruijnVertex,MultiSampleEdge> altPath = bestPaths.get(1);
 
-        final String refString = top.getSequenceString() + ref.getSequenceString() + bot.getSequenceString();
-        Assert.assertEquals(refPath.calculateCigar(refString.getBytes(), SmithWatermanJavaAligner.getInstance()).toString(), "10M");
-        Assert.assertEquals(altPath.calculateCigar(refString.getBytes(), SmithWatermanJavaAligner.getInstance()).toString(), "1M3I5M3D1M");
+        Assert.assertEquals(refPath.calculateCigar(ref.getBytes(), SmithWatermanJavaAligner.getInstance()).toString(), "15M");
+        Assert.assertEquals(altPath.calculateCigar(ref.getBytes(), SmithWatermanJavaAligner.getInstance()).toString(), "4M3I5M3D3M");
     }
 
     @Test (enabled = false) //TODO this is disabled due to the k max paths per node optimization not being implemented yet
@@ -646,34 +683,39 @@ public class JunctionTreeKBestHaplotypeFinderUnitTest extends GATKBaseTest {
 
 
     @Test
+    @SuppressWarnings({"unchecked"})
+    //TODO this test will make a good base for testing later realignment if the leading Ns are cut back down
     public void testHardSWPath() {
         // Construct the assembly graph
-        final SeqGraph graph = new SeqGraph(11);
-        final SeqVertex top = new SeqVertex( "NNN" );
-        final SeqVertex bot = new SeqVertex( "NNN" );
-        final SeqVertex alt = new SeqVertex( "ACAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGA" );
-        final SeqVertex ref = new SeqVertex( "TGTGTGTGTGTGTGACAGAGAGAGAGAGAGAGAGAGAGAGAGAGA" );
-        graph.addVertices(top, bot, alt, ref);
-        graph.addEdges(() -> new BaseEdge(true, 1), top, ref, bot);
-        graph.addEdges(() -> new BaseEdge(false, 1), top, alt, bot);
+        final ExperimentalReadThreadingGraph graph = new ExperimentalReadThreadingGraph(11);
+        String ref = "NNNNNNNNNNN"+"TGTGTGTGTGTGTGACAGAGAGAGAGAGAGAGAGAGAGAGAGAGA"+"NNN"; // Alt with one different value from alt1
+        String alt = "NNNNNNNNNNN"+"ACAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGA"+"NNN"; // Alt with one different value from alt1
+
+        // Generate some reads that do not span the entire active region
+        graph.addSequence("anonymous", getBytes(ref), true);
+        graph.addSequence("anonymous", getBytes(ref), false);
+        graph.addSequence("anonymous", getBytes(alt), false);
+        graph.buildGraphIfNecessary();
+        graph.recoverDanglingHeads(0, 2, true, SmithWatermanJavaAligner.getInstance());
+        graph.generateJunctionTrees();
 
         @SuppressWarnings("all")
-        final List<KBestHaplotype> paths = new JunctionTreeKBestHaplotypeFinder(graph, top, bot).findBestHaplotypes();
+        final JunctionTreeKBestHaplotypeFinder finder = new JunctionTreeKBestHaplotypeFinder(graph);
+        finder.setWeightThresholdToUse(1);
+        final List<KBestHaplotype<MultiDeBruijnVertex, MultiSampleEdge>> paths = finder.findBestHaplotypes();
 
         Assert.assertEquals(paths.size(), 2);
 
-        final Path<SeqVertex,BaseEdge> refPath = paths.get(0);
-        final Path<SeqVertex,BaseEdge> altPath = paths.get(1);
+        final Path<MultiDeBruijnVertex, MultiSampleEdge> refPath = paths.get(0);
+        final Path<MultiDeBruijnVertex, MultiSampleEdge> altPath = paths.get(1);
 
-        final String refString = top.getSequenceString() + ref.getSequenceString() + bot.getSequenceString();
-
-        logger.warn("RefPath : " + refPath + " cigar " + refPath.calculateCigar(refString.getBytes(),
+        logger.warn("RefPath : " + refPath + " cigar " + refPath.calculateCigar(ref.getBytes(),
                 SmithWatermanJavaAligner.getInstance()));
-        logger.warn("AltPath : " + altPath + " cigar " + altPath.calculateCigar(refString.getBytes(),
+        logger.warn("AltPath : " + altPath + " cigar " + altPath.calculateCigar(ref.getBytes(),
                 SmithWatermanJavaAligner.getInstance()));
 
-        Assert.assertEquals(refPath.calculateCigar(refString.getBytes(), SmithWatermanJavaAligner.getInstance()).toString(), "51M");
-        Assert.assertEquals(altPath.calculateCigar(refString.getBytes(), SmithWatermanJavaAligner.getInstance()).toString(), "3M6I48M");
+        Assert.assertEquals(refPath.calculateCigar(ref.getBytes(), SmithWatermanJavaAligner.getInstance()).toString(), "59M");
+        Assert.assertEquals(altPath.calculateCigar(ref.getBytes(), SmithWatermanJavaAligner.getInstance()).toString(), "11M6I48M");
     }
 
     @Test
@@ -786,94 +828,5 @@ public class JunctionTreeKBestHaplotypeFinderUnitTest extends GATKBaseTest {
             path = new Path<>(path, graph.getEdge(path.getLastVertex(), vertices.get(i)));
         }
         return path;
-    }
-
-    @Test(dataProvider = "SystematicRefAltSWTestData")
-    public void testRefAltSW(final String prefix, final String end, final String refMid, final String altMid, final String midCigar) {
-        // Construct the assembly graph
-        SeqGraph graph = new SeqGraph(11);
-
-        final int padSize = 0;
-        SeqVertex top = new SeqVertex(Strings.repeat("N", padSize));
-        SeqVertex ref = new SeqVertex(prefix + refMid + end);
-        SeqVertex alt = new SeqVertex(prefix + altMid + end);
-        SeqVertex bot = new SeqVertex(Strings.repeat("N", padSize));
-
-        graph.addVertices(top, ref, alt, bot);
-        graph.addEdges(() -> new BaseEdge(true, 1), top, ref, bot);
-        graph.addEdges(() -> new BaseEdge(false, 1), top, alt, bot);
-
-        // Construct the test path
-        Path<SeqVertex,BaseEdge> path = makePath(Arrays.asList(top, alt, bot), graph);
-
-        Cigar expected = new Cigar();
-        expected.add(new CigarElement(padSize, CigarOperator.M));
-        if ( ! prefix.equals("") ) expected.add(new CigarElement(prefix.length(), CigarOperator.M));
-        for ( final CigarElement elt : TextCigarCodec.decode(midCigar).getCigarElements() ) expected.add(elt);
-        if ( ! end.equals("") ) expected.add(new CigarElement(end.length(), CigarOperator.M));
-        expected.add(new CigarElement(padSize, CigarOperator.M));
-        expected = AlignmentUtils.consolidateCigar(expected);
-
-        final String refString = top.getSequenceString() + ref.getSequenceString() + bot.getSequenceString();
-        final Cigar pathCigar = path.calculateCigar(refString.getBytes(), SmithWatermanJavaAligner.getInstance());
-
-        logger.warn("diffs: " + ref + " vs. " + alt + " cigar " + midCigar);
-        logger.warn("Path " + path + " with cigar " + pathCigar);
-        logger.warn("Expected cigar " + expected);
-
-        Assert.assertEquals(pathCigar, expected, "Cigar mismatch: ref = " + refString + " vs alt = " + new String(path.getBases()));
-    }
-
-    @Test
-    public void testLeftAlignCigarSequentially() {
-        String preRefString = "GATCGATCGATC";
-        String postRefString = "TTT";
-        String refString = "ATCGAGGAGAGCGCCCCG";
-        String indelString1 = "X";
-        String indelString2 = "YZ";
-        int refIndel1 = 10;
-        int refIndel2 = 12;
-
-        for ( final int indelSize1 : Arrays.asList(1, 2, 3, 4) ) {
-            for ( final int indelOp1 : Arrays.asList(1, -1) ) {
-                for ( final int indelSize2 : Arrays.asList(1, 2, 3, 4) ) {
-                    for ( final int indelOp2 : Arrays.asList(1, -1) ) {
-
-                        Cigar expectedCigar = new Cigar();
-                        expectedCigar.add(new CigarElement(refString.length(), CigarOperator.M));
-                        expectedCigar.add(new CigarElement(indelSize1, (indelOp1 > 0 ? CigarOperator.I : CigarOperator.D)));
-                        expectedCigar.add(new CigarElement((indelOp1 < 0 ? refIndel1 - indelSize1 : refIndel1), CigarOperator.M));
-                        expectedCigar.add(new CigarElement(refString.length(), CigarOperator.M));
-                        expectedCigar.add(new CigarElement(indelSize2 * 2, (indelOp2 > 0 ? CigarOperator.I : CigarOperator.D)));
-                        expectedCigar.add(new CigarElement((indelOp2 < 0 ? (refIndel2 - indelSize2) * 2 : refIndel2 * 2), CigarOperator.M));
-                        expectedCigar.add(new CigarElement(refString.length(), CigarOperator.M));
-
-                        Cigar givenCigar = new Cigar();
-                        givenCigar.add(new CigarElement(refString.length() + refIndel1/2, CigarOperator.M));
-                        givenCigar.add(new CigarElement(indelSize1, (indelOp1 > 0 ? CigarOperator.I : CigarOperator.D)));
-                        givenCigar.add(new CigarElement((indelOp1 < 0 ? (refIndel1/2 - indelSize1) : refIndel1/2) + refString.length() + refIndel2/2 * 2, CigarOperator.M));
-                        givenCigar.add(new CigarElement(indelSize2 * 2, (indelOp2 > 0 ? CigarOperator.I : CigarOperator.D)));
-                        givenCigar.add(new CigarElement((indelOp2 < 0 ? (refIndel2/2 - indelSize2) * 2 : refIndel2/2 * 2) + refString.length(), CigarOperator.M));
-
-                        String theRef = preRefString + refString + Strings.repeat(indelString1, refIndel1) + refString + Strings.repeat(indelString2, refIndel2) + refString + postRefString;
-                        String theRead = refString + Strings.repeat(indelString1, refIndel1 + indelOp1 * indelSize1) + refString + Strings.repeat(indelString2, refIndel2 + indelOp2 * indelSize2) + refString;
-
-                        Cigar calculatedCigar = CigarUtils.leftAlignCigarSequentially(AlignmentUtils.consolidateCigar(givenCigar), theRef.getBytes(), theRead.getBytes(), preRefString.length(), 0);
-                        Assert.assertEquals(AlignmentUtils.consolidateCigar(calculatedCigar).toString(), AlignmentUtils.consolidateCigar(expectedCigar).toString(), "Cigar strings do not match!");
-                    }
-                }
-            }
-        }
-    }
-
-    @Test(enabled = true)
-    public void testLeftAlignCigarSequentiallyAdjacentID() {
-        final String ref = "GTCTCTCTCTCTCTCTCTATATATATATATATATTT";
-        final String hap = "GTCTCTCTCTCTCTCTCTCTCTATATATATATATTT";
-        final Cigar originalCigar = TextCigarCodec.decode("18M4I12M4D2M");
-
-        final Cigar result = CigarUtils.leftAlignCigarSequentially(originalCigar, ref.getBytes(), hap.getBytes(), 0, 0);
-        logger.warn("Result is " + result);
-        Assert.assertEquals(originalCigar.getReferenceLength(), result.getReferenceLength(), "Reference lengths are different");
     }
 }

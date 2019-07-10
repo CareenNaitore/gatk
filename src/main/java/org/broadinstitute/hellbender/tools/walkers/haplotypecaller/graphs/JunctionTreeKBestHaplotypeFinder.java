@@ -157,11 +157,14 @@ public class JunctionTreeKBestHaplotypeFinder<V extends BaseVertex, E extends Ba
                         queue.addAll(jTPaths);
                     }
 
-                // Otherwise there is only one node forwards so we take that
+                // Otherwise just take the next node forward
                 } else {
-                    List<E> chainCopy = new ArrayList<>(chain);
-                    chainCopy.add(outgoingEdges.iterator().next());
-                    queue.add(new RTBesthaplotype<>(pathToExtend, chainCopy, 0));
+                    // If there are no outgoing edges from this node, then just kill this branch from the queue
+                    if (outgoingEdges.size() > 0) {
+                        List<E> chainCopy = new ArrayList<>(chain);
+                        chainCopy.add(outgoingEdges.iterator().next());
+                        queue.add(new RTBesthaplotype<>(pathToExtend, chainCopy, 0));
+                    }
                 }
             }
         }
