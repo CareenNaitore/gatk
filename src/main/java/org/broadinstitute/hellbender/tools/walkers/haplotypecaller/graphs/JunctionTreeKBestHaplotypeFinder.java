@@ -54,8 +54,9 @@ public class JunctionTreeKBestHaplotypeFinder<V extends BaseVertex, E extends Ba
     }
 
     @VisibleForTesting
-    public void setWeightThresholdToUse(final int outgoingWeight) {
+    public JunctionTreeKBestHaplotypeFinder<V, E> setWeightThresholdToUse(final int outgoingWeight) {
         weightThresholdToUse = outgoingWeight;
+        return this;
     }
 
 
@@ -83,13 +84,13 @@ public class JunctionTreeKBestHaplotypeFinder<V extends BaseVertex, E extends Ba
     @Override
     @SuppressWarnings({"unchecked"})
     public List<KBestHaplotype<V, E>> findBestHaplotypes(final int maxNumberOfHaplotypes) {
-        final List<RTBesthaplotype<V, E>> result = new ArrayList<>();
-        final PriorityQueue<RTBesthaplotype<V, E>> queue = new PriorityQueue<>(Comparator.comparingDouble(KBestHaplotype<V, E>::score).reversed());
-        sources.forEach(source -> queue.add(new RTBesthaplotype<>(source, graph)));
+        final List<JTBestHaplotype<V, E>> result = new ArrayList<>();
+        final PriorityQueue<JTBestHaplotype<V, E>> queue = new PriorityQueue<>(Comparator.comparingDouble(KBestHaplotype<V, E>::score).reversed());
+        sources.forEach(source -> queue.add(new JTBestHaplotype<>(source, graph)));
 
         // Iterate over paths in the queue, unless we are out of paths of maxHaplotypes to find
         while (!queue.isEmpty() && result.size() < maxNumberOfHaplotypes) {
-            final RTBesthaplotype<V, E> pathToExtend = queue.poll();
+            final JTBestHaplotype<V, E> pathToExtend = queue.poll();
             V vertexToExtend = pathToExtend.getLastVertex();
             Set<E> outgoingEdges = graph.outgoingEdgesOf(vertexToExtend);
 
@@ -130,13 +131,13 @@ public class JunctionTreeKBestHaplotypeFinder<V extends BaseVertex, E extends Ba
                 if (chain.isEmpty()) {
                     result.add(pathToExtend);
                 } else {
-                    result.add(new RTBesthaplotype<>(pathToExtend, chain, 0));
+                    result.add(new JTBestHaplotype<>(pathToExtend, chain, 0));
                 }
 
             // We must be at a point where the path diverges, use junction trees to resolve if possible
             } else {
                 if (outgoingEdges.size() > 1) {
-                    List<RTBesthaplotype<V, E>> jTPaths = pathToExtend.getApplicableNextEdgesBasedOnJunctionTrees(chain, weightThresholdToUse);
+                    List<JTBestHaplotype<V, E>> jTPaths = pathToExtend.getApplicableNextEdgesBasedOnJunctionTrees(chain, weightThresholdToUse);
                     if (jTPaths.isEmpty()) {
                         // Standard behavior from the old GraphBasedKBestHaplotypeFinder
                         int totalOutgoingMultiplicity = 0;
@@ -150,7 +151,7 @@ public class JunctionTreeKBestHaplotypeFinder<V extends BaseVertex, E extends Ba
                             if (totalOutgoingMultiplicity != 0 && edge.getMultiplicity() != 0) {
                                 List<E> chainCopy = new ArrayList<>(chain);
                                 chainCopy.add(edge);
-                                queue.add(new RTBesthaplotype<>(pathToExtend, chainCopy, edge.getMultiplicity(), totalOutgoingMultiplicity));
+                                queue.add(new JTBestHaplotype<>(pathToExtend, chainCopy, edge.getMultiplicity(), totalOutgoingMultiplicity));
                             }
                         }
                     } else {
@@ -163,7 +164,7 @@ public class JunctionTreeKBestHaplotypeFinder<V extends BaseVertex, E extends Ba
                     if (outgoingEdges.size() > 0) {
                         List<E> chainCopy = new ArrayList<>(chain);
                         chainCopy.add(outgoingEdges.iterator().next());
-                        queue.add(new RTBesthaplotype<>(pathToExtend, chainCopy, 0));
+                        queue.add(new JTBestHaplotype<>(pathToExtend, chainCopy, 0));
                     }
                 }
             }

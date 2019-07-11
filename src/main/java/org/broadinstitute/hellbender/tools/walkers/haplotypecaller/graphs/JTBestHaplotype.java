@@ -1,43 +1,61 @@
 package org.broadinstitute.hellbender.tools.walkers.haplotypecaller.graphs;
 
-import org.broadinstitute.hellbender.exceptions.GATKException;
 import org.broadinstitute.hellbender.tools.walkers.haplotypecaller.readthreading.ExperimentalReadThreadingGraph;
-
 import java.util.*;
 import java.util.stream.Collectors;
 
-public class RTBesthaplotype<T extends BaseVertex, E extends BaseEdge> extends KBestHaplotype<T, E> {
+/**
+ * A best haplotype object for being used with junction trees.
+ *
+ * Each path holds a list of all the junction trees describing its current path. This list consists of pointers to nodes
+ * in the junction trees corresponding to the paths that have already been taken by the JTBestHaplotype object.
+ *
+ * In order to invoke the junction trees simply call {@link #getApplicableNextEdgesBasedOnJunctionTrees} which will return a list
+ * of cloned path objects corresponding to each path present in the eldest tree. This method handles popping old trees with insufficient
+ * data off of the list as well as incrementing all of the trees in the list to point at the next element based on the chosen path.
+ */
+public class JTBestHaplotype<T extends BaseVertex, E extends BaseEdge> extends KBestHaplotype<T, E> {
     // TODO these nodes probably shouldn't be exposed and held externally methinks
     private List<ExperimentalReadThreadingGraph.ThreadingNode> activeNodes;
 
-    public RTBesthaplotype(final RTBesthaplotype p, final List<E> edgesToExtend, final double edgePenalty) {
+    public JTBestHaplotype(final JTBestHaplotype p, final List<E> edgesToExtend, final double edgePenalty) {
         super(p, edgesToExtend, edgePenalty);
         //this.threadingTreesToConsult = p.threadingTreesToConsult.cop;
         activeNodes = new ArrayList<ExperimentalReadThreadingGraph.ThreadingNode>(p.activeNodes);
     }
 
     // Constructor to be used for internal calls from {@link #getApplicableNextEdgesBasedOnJunctionTrees()}
-    public RTBesthaplotype(final RTBesthaplotype p, final List<E> chain, final int edgeMultiplicity, final int totalOutgoingMultiplicity) {
+    public JTBestHaplotype(final JTBestHaplotype p, final List<E> chain, final int edgeMultiplicity, final int totalOutgoingMultiplicity) {
         super(p, chain, computeLogPenaltyScore( edgeMultiplicity, totalOutgoingMultiplicity));
         activeNodes = new ArrayList<ExperimentalReadThreadingGraph.ThreadingNode>(p.activeNodes);
         // Ensure that the relevant edge has been traversed
         takeEdge(chain.get(chain.size() - 1));
     }
 
-    public RTBesthaplotype(final T initialVertex, final BaseGraph<T,E> graph) {
+    public JTBestHaplotype(final T initialVertex, final BaseGraph<T,E> graph) {
         super(initialVertex, graph);
         activeNodes = new ArrayList<>();
     }
 
     /**
-     * This method is the primary engine for parsing
+     * This method is the primary logic of deciding how to traverse junction paths and with what score.
+     *
+     * TODO this will likely change to use the eldest tree regardless of threshold passage
+     * This method checks the list of junction tree nodes, looking first at the eldest tree to perform the following:
+     *  - Checks the total outgoing weight, if its below weight threshold then the tree is popped and a new tree is considered
+     *  - For each path in the oldest tree clones this path with the chain edges added, taking the edge target for each path present in the tree.
+     *
+     * @param chain List of edges to add between the current path and the junction tree edge
+     * @param weightThreshold threshold of evidence under which old junction trees are discarded.
+     * @return A list of new RTBestHaplotypeObjects corresponding to each path chosen from the exisitng junction trees,
+     *         or an empty list if there is no path illuminated by junction trees.
      */
     @SuppressWarnings({"unchecked"})
-    public List<RTBesthaplotype<T, E>> getApplicableNextEdgesBasedOnJunctionTrees(final List<E> chain, final int weightThreshold) {
-        List<RTBesthaplotype<T, E>> output = new ArrayList<>();
+    public List<JTBestHaplotype<T, E>> getApplicableNextEdgesBasedOnJunctionTrees(final List<E> chain, final int weightThreshold) {
+        List<JTBestHaplotype<T, E>> output = new ArrayList<>();
         ExperimentalReadThreadingGraph.ThreadingNode eldestTree = activeNodes.isEmpty() ? null : activeNodes.get(0);
         while (eldestTree != null) {
-            //TODO this can be better
+            //TODO this can be better, need to create a tree "view" object that tracks the current node more sanely
             int totalOut = 0;
             for ( ExperimentalReadThreadingGraph.ThreadingNode node : eldestTree.getChildrenNodes().values()) {
                 totalOut += node.getCount();
@@ -49,7 +67,7 @@ public class RTBesthaplotype<T extends BaseVertex, E extends BaseEdge> extends K
                     ExperimentalReadThreadingGraph.ThreadingNode child = childNode.getValue();
                     List<E> chainCopy = new ArrayList<>(chain);
                     chainCopy.add((E) childNode.getKey());
-                    output.add(new RTBesthaplotype<>(this, chainCopy, child.getCount(), totalOut));
+                    output.add(new JTBestHaplotype<>(this, chainCopy, child.getCount(), totalOut));
                 }
                 return output;
 
