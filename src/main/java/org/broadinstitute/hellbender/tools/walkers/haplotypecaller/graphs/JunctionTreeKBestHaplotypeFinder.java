@@ -3,6 +3,7 @@ package org.broadinstitute.hellbender.tools.walkers.haplotypecaller.graphs;
 import com.google.common.annotations.VisibleForTesting;
 import org.broadinstitute.hellbender.tools.walkers.haplotypecaller.readthreading.ExperimentalReadThreadingGraph;
 import org.broadinstitute.hellbender.tools.walkers.haplotypecaller.readthreading.MultiDeBruijnVertex;
+import org.broadinstitute.hellbender.utils.Utils;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -24,6 +25,7 @@ public class JunctionTreeKBestHaplotypeFinder<V extends BaseVertex, E extends Ba
         } else {
             throw new RuntimeException("ExperimentalKBesthaplotypeFinder requires an ExperimentalReadThreadingGraph be provided");
         }
+        Utils.validate(weightThresholdToUse > 0, "Pruning Weight Threshold must be a positive number greater than 0");
     }
 
     /**
@@ -55,6 +57,7 @@ public class JunctionTreeKBestHaplotypeFinder<V extends BaseVertex, E extends Ba
 
     @VisibleForTesting
     public JunctionTreeKBestHaplotypeFinder<V, E> setWeightThresholdToUse(final int outgoingWeight) {
+        Utils.validate(weightThresholdToUse > 0, "Pruning Weight Threshold must be a positive number greater than 0");
         weightThresholdToUse = outgoingWeight;
         return this;
     }
@@ -125,7 +128,7 @@ public class JunctionTreeKBestHaplotypeFinder<V extends BaseVertex, E extends Ba
             }
 
             // If we are at a reference end then we close out the path TODO this isn't adequate for non-unique reference sinks
-            if (sinks.contains(vertexToExtend)) {
+            if (sinks.contains(vertexToExtend) && pathToExtend.hasStoppingEvidence(weightThresholdToUse)) {
                 //TODO this will probably be resolved using a junction tree on that node and treating it as an edge to extend
                 //todo the proposal here would be to check if there is an active tree left for us at this point and if so keep going
                 if (chain.isEmpty()) {
@@ -133,39 +136,39 @@ public class JunctionTreeKBestHaplotypeFinder<V extends BaseVertex, E extends Ba
                 } else {
                     result.add(new JTBestHaplotype<>(pathToExtend, chain, 0));
                 }
+            }
+            // NOTE: even if we are at the reference stop and there is evidence in the junction trees of a stop we still want to explore other edges potentially
 
             // We must be at a point where the path diverges, use junction trees to resolve if possible
-            } else {
-                if (outgoingEdges.size() > 1) {
-                    List<JTBestHaplotype<V, E>> jTPaths = pathToExtend.getApplicableNextEdgesBasedOnJunctionTrees(chain, weightThresholdToUse);
-                    if (jTPaths.isEmpty()) {
-                        // Standard behavior from the old GraphBasedKBestHaplotypeFinder
-                        int totalOutgoingMultiplicity = 0;
-                        for (final BaseEdge edge : outgoingEdges) {
-                            totalOutgoingMultiplicity += edge.getMultiplicity();
-                        }
-
-                        // Add all valid edges to the graph
-                        for (final E edge : outgoingEdges) {
-                            // Don't traverse an edge if it only has reference evidence supporting it (unless there is no other evidence whatsoever)
-                            if (totalOutgoingMultiplicity != 0 && edge.getMultiplicity() != 0) {
-                                List<E> chainCopy = new ArrayList<>(chain);
-                                chainCopy.add(edge);
-                                queue.add(new JTBestHaplotype<>(pathToExtend, chainCopy, edge.getMultiplicity(), totalOutgoingMultiplicity));
-                            }
-                        }
-                    } else {
-                        queue.addAll(jTPaths);
+            if (outgoingEdges.size() > 1) {
+                List<JTBestHaplotype<V, E>> jTPaths = pathToExtend.getApplicableNextEdgesBasedOnJunctionTrees(chain, weightThresholdToUse);
+                if (jTPaths.isEmpty()) {
+                    // Standard behavior from the old GraphBasedKBestHaplotypeFinder
+                    int totalOutgoingMultiplicity = 0;
+                    for (final BaseEdge edge : outgoingEdges) {
+                        totalOutgoingMultiplicity += edge.getMultiplicity();
                     }
 
-                // Otherwise just take the next node forward
+                    // Add all valid edges to the graph
+                    for (final E edge : outgoingEdges) {
+                        // Don't traverse an edge if it only has reference evidence supporting it (unless there is no other evidence whatsoever)
+                        if (totalOutgoingMultiplicity != 0 && edge.getMultiplicity() != 0) {
+                            List<E> chainCopy = new ArrayList<>(chain);
+                            chainCopy.add(edge);
+                            queue.add(new JTBestHaplotype<>(pathToExtend, chainCopy, edge.getMultiplicity(), totalOutgoingMultiplicity));
+                        }
+                    }
                 } else {
-                    // If there are no outgoing edges from this node, then just kill this branch from the queue
-                    if (outgoingEdges.size() > 0) {
-                        List<E> chainCopy = new ArrayList<>(chain);
-                        chainCopy.add(outgoingEdges.iterator().next());
-                        queue.add(new JTBestHaplotype<>(pathToExtend, chainCopy, 0));
-                    }
+                    queue.addAll(jTPaths);
+                }
+
+            // Otherwise just take the next node forward
+            } else {
+                // If there are no outgoing edges from this node, then just kill this branch from the queue
+                if (outgoingEdges.size() > 0) {
+                    List<E> chainCopy = new ArrayList<>(chain);
+                    chainCopy.add(outgoingEdges.iterator().next());
+                    queue.add(new JTBestHaplotype<>(pathToExtend, chainCopy, 0));
                 }
             }
         }

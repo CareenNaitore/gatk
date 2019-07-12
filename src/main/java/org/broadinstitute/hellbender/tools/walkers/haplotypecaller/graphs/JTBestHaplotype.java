@@ -37,6 +37,41 @@ public class JTBestHaplotype<T extends BaseVertex, E extends BaseEdge> extends K
         activeNodes = new ArrayList<>();
     }
 
+    //TODO this needs to be the same logic as the blow method, this is temporary
+    // returns true if there is a symbolic edge pointing to the reference end or if there is insufficient node data
+    public boolean hasStoppingEvidence(final int weightThreshold) {
+        ExperimentalReadThreadingGraph.ThreadingNode eldestTree = activeNodes.isEmpty() ? null : activeNodes.get(0);
+        int totalOut = getTotalOutForBranch(eldestTree);
+
+        // Keep removing trees until we find one under our threshold TODO this should be in a helper method
+        while (eldestTree != null && totalOut < weightThreshold) {
+            activeNodes.remove(0);
+            eldestTree = activeNodes.isEmpty() ? null : activeNodes.get(0);
+            totalOut = getTotalOutForBranch(eldestTree);
+        }
+
+        if (eldestTree != null) {
+            for ( ExperimentalReadThreadingGraph.ThreadingNode node : eldestTree.getChildrenNodes().values()) {
+                if (node.isSymbolicEnd()) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        return true;
+    }
+
+
+    private int getTotalOutForBranch(ExperimentalReadThreadingGraph.ThreadingNode eldestTree) {
+        int totalOut = 0;
+        if (eldestTree != null) {
+            for (ExperimentalReadThreadingGraph.ThreadingNode node : eldestTree.getChildrenNodes().values()) {
+                totalOut += node.getCount();
+            }
+        }
+        return totalOut;
+    }
+
     /**
      * This method is the primary logic of deciding how to traverse junction paths and with what score.
      *
@@ -50,24 +85,26 @@ public class JTBestHaplotype<T extends BaseVertex, E extends BaseEdge> extends K
      * @return A list of new RTBestHaplotypeObjects corresponding to each path chosen from the exisitng junction trees,
      *         or an empty list if there is no path illuminated by junction trees.
      */
+    //TODO for reviewer - is this the best way to structure this? I'm not sure how to decide about end nodes based on this, passing them back seesm wrong
     @SuppressWarnings({"unchecked"})
     public List<JTBestHaplotype<T, E>> getApplicableNextEdgesBasedOnJunctionTrees(final List<E> chain, final int weightThreshold) {
         List<JTBestHaplotype<T, E>> output = new ArrayList<>();
         ExperimentalReadThreadingGraph.ThreadingNode eldestTree = activeNodes.isEmpty() ? null : activeNodes.get(0);
         while (eldestTree != null) {
             //TODO this can be better, need to create a tree "view" object that tracks the current node more sanely
-            int totalOut = 0;
-            for ( ExperimentalReadThreadingGraph.ThreadingNode node : eldestTree.getChildrenNodes().values()) {
-                totalOut += node.getCount();
-            }
+            int totalOut = getTotalOutForBranch(eldestTree);
             // This right here is what handles dealing with weight thresholds
+            // TODO for the reviewer - Perhaps the approach here is to check younger trees as well but don't throw out informative older trees
             if (totalOut >= weightThreshold) {
                 //TODO add SOME sanity check to ensure that the vertex we stand on and the edges we are polling line up
                 for (Map.Entry<MultiSampleEdge, ExperimentalReadThreadingGraph.ThreadingNode> childNode : eldestTree.getChildrenNodes().entrySet()) {
-                    ExperimentalReadThreadingGraph.ThreadingNode child = childNode.getValue();
-                    List<E> chainCopy = new ArrayList<>(chain);
-                    chainCopy.add((E) childNode.getKey());
-                    output.add(new JTBestHaplotype<>(this, chainCopy, child.getCount(), totalOut));
+                    // Don't add edges to the symbolic end vertex here at all, thats handled elsewhere
+                    if (!childNode.getValue().isSymbolicEnd()) {
+                        ExperimentalReadThreadingGraph.ThreadingNode child = childNode.getValue();
+                        List<E> chainCopy = new ArrayList<>(chain);
+                        chainCopy.add((E) childNode.getKey());
+                        output.add(new JTBestHaplotype<>(this, chainCopy, child.getCount(), totalOut));
+                    }
                 }
                 return output;
 

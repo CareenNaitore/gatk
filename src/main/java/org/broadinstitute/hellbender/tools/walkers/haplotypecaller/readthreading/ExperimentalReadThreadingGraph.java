@@ -24,6 +24,9 @@ import java.util.stream.Collectors;
  * to
  */
 public class ExperimentalReadThreadingGraph extends ReadThreadingGraphInterface {
+    private static final MultiDeBruijnVertex SYMBOLIC_END_VETEX = new MultiDeBruijnVertex(new byte[]{'_'});
+    private MultiSampleEdge SYMBOLIC_END_EDGE;
+
     private final OneShotLogger oneShotDanglingTailLogger = new OneShotLogger(this.getClass());
 
     private Map<MultiDeBruijnVertex, ThreadingTree> readThreadingJunctionTrees = new HashMap<>();
@@ -185,9 +188,7 @@ public class ExperimentalReadThreadingGraph extends ReadThreadingGraphInterface 
                 // If this node has an out-degree > 1, add the edge we took to existing trees
                 if (outgoingEdges.size() != 1) {
                     // TODO, make an object to encapsulate this operation better
-                    List<ThreadingNode> newNodes = nodesToExtend.stream().map(n -> n.addEdge(outgoingEdge)).collect(Collectors.toList());
-                    nodesToExtend.clear();
-                    nodesToExtend.addAll(newNodes);
+                    addEdgeToJunctionTreeNodes(nodesToExtend, outgoingEdge);
                 }
 
                 return target;
@@ -196,11 +197,22 @@ public class ExperimentalReadThreadingGraph extends ReadThreadingGraphInterface 
         return null;
     }
 
+    // Helper method that adds a single edge to all of the nodes in nodesToExtend.
+    private static void addEdgeToJunctionTreeNodes(List<ThreadingNode> nodesToExtend, MultiSampleEdge outgoingEdge) {
+        List<ThreadingNode> newNodes = nodesToExtend.stream().map(n -> n.addEdge(outgoingEdge)).collect(Collectors.toList());
+        nodesToExtend.clear();
+        nodesToExtend.addAll(newNodes);
+    }
+
     // Helper method used to determine whether a vertex meets the criteria to hold a junction tree
-    // The current criteria, if any outgoing edge from a particular vertex leads to a vertex with inDegree > 1, then it warrants a tree.
+    // The current criteria, if any outgoing edge from a particular vertex leads to a vertex with inDegree > 1, then it warrants a tree. Or if it is the reference start vertex.
     // NOTE: this check is necessary to handle the edge cases that may arise when a vertex has multiple exit paths but happens to lead to a vetex that needs a junction tree
-    //TODO test this?
     private boolean vertexWarrantsJunctionTree(final MultiDeBruijnVertex vertex) {
+        // The reference source vertex warrants a junction tree
+        if (getReferenceSourceVertex() == vertex) {
+            return true;
+        }
+
         for (MultiSampleEdge edge : outgoingEdgesOf(vertex)) {
             if (inDegreeOf(getEdgeTarget(edge)) > 1) {
                 return true;
@@ -368,6 +380,10 @@ public class ExperimentalReadThreadingGraph extends ReadThreadingGraphInterface 
     // Generate threading trees
     public void generateJunctionTrees() {
         buildGraphIfNecessary();
+        // Adding handle vertex to support symbolic end alleles
+        addVertex(SYMBOLIC_END_VETEX);
+        SYMBOLIC_END_EDGE = addEdge(getReferenceSinkVertex(), SYMBOLIC_END_VETEX);
+
         readThreadingJunctionTrees = new HashMap<>();
         pending.values().stream().flatMap(Collection::stream).forEach(this::threadSequenceForJuncitonTree);
     }
@@ -378,7 +394,7 @@ public class ExperimentalReadThreadingGraph extends ReadThreadingGraphInterface 
      *
      * @param seqForKmers
      */
-    public void threadSequenceForJuncitonTree(SequenceForKmers seqForKmers) {
+    public void threadSequenceForJuncitonTree(final SequenceForKmers seqForKmers) {
         // Maybe handle this differently, the reference junction tree should be held seperatedly from everything else.
         if (seqForKmers.isRef) {
             return;
@@ -399,12 +415,13 @@ public class ExperimentalReadThreadingGraph extends ReadThreadingGraphInterface 
         MultiDeBruijnVertex lastVertex = startingVertex;
         int kmersPastSinceLast = 0;
         for ( int i = startPos + 1; i <= seqForKmers.stop - kmerSize; i++ ) {
-            MultiDeBruijnVertex vertex;
+            final MultiDeBruijnVertex vertex;
             if (kmersPastSinceLast == 0) {
                 vertex = extendJunctionThreadingByOne(lastVertex, seqForKmers.sequence, i, nodesUpdated);
             } else {
                 Kmer kmer = new Kmer(seqForKmers.sequence, i, kmerSize);
                 vertex = uniqueKmers.get(kmer);
+                // TODO this might cause problems
                 if (vertex != null) {
                    nodesUpdated.addAll(attemptToResolveThreadingBetweenVertexes(lastVertex , vertex));
                 }
@@ -412,10 +429,15 @@ public class ExperimentalReadThreadingGraph extends ReadThreadingGraphInterface 
             // If for whatever reason vertex = null, then we have fallen off the corrected graph so we don't update anything
             if (vertex != null) {
                 lastVertex = vertex;
+                kmersPastSinceLast = 0;
             } else {
                 kmersPastSinceLast++;
             }
+        }
 
+        // As a final step, if the last vetex happens to be the ref-stop vertex then we want to append a symbolic node to the junciton trees
+        if (lastVertex == getReferenceSinkVertex()) {
+            addEdgeToJunctionTreeNodes(nodesUpdated, SYMBOLIC_END_EDGE);
         }
     }
 
@@ -522,7 +544,7 @@ public class ExperimentalReadThreadingGraph extends ReadThreadingGraphInterface 
     // Linked node object for storing tree topography
     public class ThreadingNode {
         private Map<MultiSampleEdge, ThreadingNode> childrenNodes;
-        private MultiSampleEdge prevEdge = null; // This may be null if this node corresponds to the root of the graph
+        private MultiSampleEdge prevEdge; // This may be null if this node corresponds to the root of the graph
         private int count = 0;
 
         private ThreadingNode(MultiSampleEdge edge) {
@@ -601,6 +623,11 @@ public class ExperimentalReadThreadingGraph extends ReadThreadingGraphInterface 
         // Return the count of total evidence supporting this node in the tree
         public int getCount() {
             return count;
+        }
+
+        // Checks if this node is the symbolic end by determining if its previous edge ends on the symbolic edge
+        public boolean isSymbolicEnd() {
+            return prevEdge == SYMBOLIC_END_EDGE;
         }
     }
 
